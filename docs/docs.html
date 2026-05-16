@@ -205,6 +205,7 @@ PostgreSQL + pgvector
                     <span class="px-2 py-1 rounded bg-brand-50 text-brand-700">project</span>
                     <span class="px-2 py-1 rounded bg-brand-50 text-brand-700">created_by</span>
                     <span class="px-2 py-1 rounded bg-brand-50 text-brand-700">supersedes</span>
+                    <span class="px-2 py-1 rounded bg-brand-50 text-brand-700">provenance <span class="text-brand-500">(v0.7.0+)</span></span>
                 </div>
 
                 <h3 class="text-lg font-semibold mt-8 mb-3">Indexes</h3>
@@ -223,6 +224,28 @@ PostgreSQL + pgvector
     query_embedding := '[0.1, 0.2, ...]'::vector,
     match_count := 10,
     match_threshold := 0.5
+);</code></pre>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">
+                    Provenance Helpers
+                    <span class="text-xs font-medium text-white bg-brand-600 px-2 py-0.5 rounded ml-2 align-middle">v0.7.0+</span>
+                </h3>
+                <p class="text-gray-600 text-sm mb-4">
+                    Migration <code>003-add-provenance-helpers.sql</code> adds two <strong>generated columns</strong> projected from <code>metadata-&gt;'provenance'</code> (the <a href="https://github.com/srnichols/plan-forge/blob/master/pforge-sdk/hallmark/README.md" class="text-brand-600 hover:underline">Hallmark v1</a> envelope written by Plan Forge), two partial indexes, and a sibling RPC for source-hash lookups. Existing rows are untouched — provenance stays optional.
+                </p>
+                <table>
+                    <thead><tr><th>Generated Column</th><th>Projection</th><th>Index</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>source_file_hash</code></td><td><code>metadata-&gt;'provenance'-&gt;&gt;'contentHash'</code></td><td><code>idx_thoughts_source_file_hash</code> (partial, WHERE NOT NULL)</td></tr>
+                        <tr><td><code>code_hash</code></td><td><code>metadata-&gt;'provenance'-&gt;&gt;'codeHash'</code></td><td><code>idx_thoughts_code_hash</code> (partial, WHERE NOT NULL)</td></tr>
+                    </tbody>
+                </table>
+                <p class="text-gray-600 text-sm mt-4 mb-2">New sibling RPC — <code>match_thoughts()</code> is unchanged:</p>
+                <pre><code>SELECT * FROM match_thoughts_by_source(
+    source_hash      := 'sha256:abcd...',
+    max_count        := 25,
+    project_filter   := NULL,
+    include_archived := false
 );</code></pre>
             </section>
 
@@ -243,9 +266,9 @@ PostgreSQL + pgvector
                     <div class="p-4 rounded-lg border border-gray-100">
                         <div class="flex items-center gap-2 mb-2">
                             <code class="text-sm bg-brand-50 text-brand-700 px-2 py-0.5 rounded">capture_thought</code>
-                            <span class="text-xs text-gray-400">content</span>
+                            <span class="text-xs text-gray-400">content, metadata?</span>
                         </div>
-                        <p class="text-sm text-gray-500">Store a thought. Auto-generates embedding and extracts metadata (type, topics, people, action items) in parallel.</p>
+                        <p class="text-sm text-gray-500">Store a thought. Auto-generates embedding and extracts metadata (type, topics, people, action items) in parallel. <span class="text-gray-600"><strong>v0.7.0+</strong>: consumers may pass <code>metadata.provenance</code> (Hallmark envelope) for source-hash traceability.</span></p>
                     </div>
                     <div class="p-4 rounded-lg border border-gray-100">
                         <div class="flex items-center gap-2 mb-2">
@@ -538,10 +561,12 @@ curl http://localhost:8080/health</code></pre>
                 <table>
                     <thead><tr><th>Method</th><th>Endpoint</th><th>Purpose</th></tr></thead>
                     <tbody>
-                        <tr><td><code>GET</code></td><td>/health</td><td>Health check</td></tr>
-                        <tr><td><code>POST</code></td><td>/memories</td><td>Capture a thought</td></tr>
+                        <tr><td><code>GET</code></td><td>/health</td><td>Health check &mdash; response includes <code>capabilities[]</code> (v0.7.0+: <code>"provenance"</code>)</td></tr>
+                        <tr><td><code>POST</code></td><td>/memories</td><td>Capture a thought (validates <code>metadata.provenance</code> when present, v0.7.0+)</td></tr>
                         <tr><td><code>POST</code></td><td>/memories/search</td><td>Semantic search</td></tr>
                         <tr><td><code>POST</code></td><td>/memories/list</td><td>Filtered listing</td></tr>
+                        <tr><td><code>POST</code></td><td>/memories/batch</td><td>Transactional batch capture (rejects all-or-nothing on bad provenance)</td></tr>
+                        <tr><td><code>GET</code></td><td>/memories/by-source <span class="text-xs text-brand-600">(v0.7.0+)</span></td><td>Look up thoughts by source/content hash</td></tr>
                         <tr><td><code>GET</code></td><td>/stats</td><td>Aggregate statistics</td></tr>
                     </tbody>
                 </table>
@@ -555,6 +580,42 @@ curl http://localhost:8080/health</code></pre>
                 <pre><code>curl -X POST http://localhost:8000/memories/search \
   -H "Content-Type: application/json" \
   -d '{"query": "database decisions", "limit": 5}'</code></pre>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">
+                    Example: Capability Probe
+                    <span class="text-xs font-medium text-white bg-brand-600 px-2 py-0.5 rounded ml-2 align-middle">v0.7.0+</span>
+                </h3>
+                <p class="text-gray-600 text-sm mb-2">Single round trip — clients learn which optional features the server speaks:</p>
+                <pre><code>curl http://localhost:8000/health
+# { "status": "healthy", "service": "open-brain-api",
+#   "capabilities": ["provenance"] }</code></pre>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">
+                    Example: Capture with Provenance
+                    <span class="text-xs font-medium text-white bg-brand-600 px-2 py-0.5 rounded ml-2 align-middle">v0.7.0+</span>
+                </h3>
+                <pre><code>curl -X POST http://localhost:8000/memories \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "Phase-PROVENANCE Slice 3 shipped: by-source RPC live",
+    "metadata": {
+      "provenance": {
+        "schemaVersion": "hallmark/v1",
+        "toolName": "forge_memory_capture",
+        "capturedAt": "2026-05-16T20:00:00Z",
+        "contentHash": "sha256:abcd...",
+        "codeHash":    "sha256:efgh..."
+      }
+    }
+  }'</code></pre>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">
+                    Example: Look up by Source Hash
+                    <span class="text-xs font-medium text-white bg-brand-600 px-2 py-0.5 rounded ml-2 align-middle">v0.7.0+</span>
+                </h3>
+                <pre><code>curl 'http://localhost:8000/memories/by-source?hash=sha256:abcd...&limit=10'
+# Returns thoughts whose metadata.provenance.contentHash matches,
+# ordered by created_at DESC. limit defaults to 25, max 100.</code></pre>
             </section>
 
             <!-- Troubleshooting -->

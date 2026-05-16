@@ -91,6 +91,12 @@
                     Read the Docs
                 </a>
             </div>
+            <div class="mt-8 inline-flex items-center gap-2 text-xs text-gray-500">
+                <span class="px-2 py-0.5 rounded-full bg-brand-600 text-white font-semibold">NEW &middot; v0.7.0</span>
+                <a href="docs.html#database" class="hover:text-brand-600 transition">
+                    Provenance helpers &mdash; source-hash lookups &amp; capability probe &rarr;
+                </a>
+            </div>
         </div>
     </section>
 
@@ -192,7 +198,7 @@
                     </div>
                     <div class="pb-8">
                         <h3 class="font-semibold text-lg mb-2">Capture</h3>
-                        <p class="text-gray-500">Your AI tool calls <code class="text-sm bg-gray-100 px-1.5 py-0.5 rounded">capture_thought</code> via MCP. You can also capture via Slack webhook, REST API, or bulk import from Notion, Obsidian, and other tools.</p>
+                        <p class="text-gray-500">Your AI tool calls <code class="text-sm bg-gray-100 px-1.5 py-0.5 rounded">capture_thought</code> via MCP. You can also capture via Slack webhook, REST API, or bulk import from Notion, Obsidian, and other tools. <span class="text-gray-600"><strong>v0.7.0+</strong>: optional Hallmark <code class="text-sm bg-gray-100 px-1.5 py-0.5 rounded">provenance</code> metadata adds source-hash traceability.</span></p>
                     </div>
                 </div>
                 <!-- Step 2 -->
@@ -236,7 +242,7 @@
         <div class="max-w-6xl mx-auto">
             <div class="text-center mb-16">
                 <h2 class="text-3xl font-bold mb-4">7 MCP tools, one protocol</h2>
-                <p class="text-gray-500 max-w-2xl mx-auto">Every operation is available as an MCP tool and as a REST endpoint.</p>
+                <p class="text-gray-500 max-w-2xl mx-auto">Every operation is available as an MCP tool and as a REST endpoint. <span class="text-gray-600">Clients can probe <code class="text-sm bg-gray-100 px-1.5 py-0.5 rounded">GET /health</code> for the <code class="text-sm bg-gray-100 px-1.5 py-0.5 rounded">capabilities[]</code> array (v0.7.0+).</span></p>
             </div>
             <div class="grid md:grid-cols-2 gap-4 max-w-4xl mx-auto">
                 <div class="flex items-start gap-3 p-4 rounded-lg border border-gray-100">
