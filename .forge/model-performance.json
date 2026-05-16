@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2026-05-16T08:42:45.627Z",
+    "plan": "Phase-PROVENANCE-PLAN",
+    "sliceId": "1",
+    "sliceTitle": "Migration 003 + rollback file",
+    "sliceType": "migration",
+    "model": "claude-sonnet-4.6",
+    "status": "passed",
+    "attempts": 1,
+    "duration_ms": 158785,
+    "cost_usd": 0.01
+  },
+  {
+    "date": "2026-05-16T08:54:42.489Z",
+    "plan": "Phase-PROVENANCE-PLAN",
+    "sliceId": "2",
+    "sliceTitle": "Wire `pforge-sdk/hallmark` into `package.json` + integration test for the migration",
+    "sliceType": "test",
+    "model": "claude-sonnet-4.6",
+    "status": "failed",
+    "attempts": 3,
+    "duration_ms": 716558,
+    "cost_usd": 0.01
+  }
+]

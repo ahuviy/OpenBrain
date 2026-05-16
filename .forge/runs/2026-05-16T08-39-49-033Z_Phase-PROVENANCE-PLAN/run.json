@@ -1,0 +1,18 @@
+{
+  "plan": "E:\\GitHub\\OpenBrain\\docs\\plans\\Phase-PROVENANCE-PLAN.md",
+  "traceId": "bc120c08726e47c58bf51a6954ae3343",
+  "startTime": "2026-05-16T08:39:49.077Z",
+  "model": "claude-opus-4.6",
+  "modelRouting": {
+    "default": "claude-opus-4.6"
+  },
+  "mode": "auto",
+  "sliceCount": 5,
+  "executionOrder": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ]
+}

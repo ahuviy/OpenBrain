@@ -1,0 +1,460 @@
+
+=== Slice 2: Wire `pforge-sdk/hallmark` into `package.json` + integration test for the migration ===
+Worker: gh-copilot
+Model: claude-sonnet-4.6
+Started: 2026-05-16T08:42:45.931Z
+
+=== STDOUT ===
+● Read pforge-prompt-1778921099547-adqy59.txt
+  │ ~\AppData\Local\Temp\pforge-prompt-1778921099547-adqy59.txt
+  └ 164 lines read
+
+● List directory db\migrations
+  └ 4 files found
+
+● Search (grep)
+  │ "pforge-sdk" in package.json
+  └ No matches found
+
+● Search (grep)
+  │ "pforge-sdk" in package-lock.json
+  └ No matches found
+
+● Read package.json
+  └ 49 lines read
+
+● Read 003-add-provenance-helpers.sql
+  │ db\migrations\003-add-provenance-helpers.sql
+  └ 54 lines read
+
+● Read vitest.integration.config.ts
+  └ 12 lines read
+
+● Read init.sql
+  │ db\init.sql
+  └ 106 lines read
+
+● Check pforge-sdk repo (shell)
+  │ gh repo view srnichols/pforge-sdk --json defaultBranchRef,url 2>&1
+  └ 2 lines...
+
+● Search (glob)
+  │ "**/pforge-sdk/**" in node_modules
+  └ No matches found
+
+● Search for pforge-sdk repo (shell)
+  │ gh search repos pforge-sdk --owner srnichols --json fullName,url 2>&1; gh
+  │ api /users/srnichols/repos --jq '.[].full_name' 2>&1 | Select-String
+  │ -Pattern "pforge" 2>&1
+  └ 2 lines...
+
+● Search (glob)
+  │ "pforge*" in E:\GitHub
+  └ 32 files found
+
+● List all repos for srnichols (shell)
+  │ gh api "/users/srnichols/repos?per_page=100" --jq '.[].full_name' 2>&1
+  └ 15 lines...
+
+● Search (glob)
+  │ "**/hallmark*"" in E:\GitHub\Plan-Forge
+  └ No matches found
+
+● Search (glob)
+  │ "**/package.json" in E:\GitHub\Plan-Forge
+  └ 10 files found
+
+● Check plan-forge repo (shell)
+  │ gh repo view srnichols/plan-forge --json defaultBranchRef,url 2>&1
+  └ 2 lines...
+
+● Read package.json
+  │ E:\GitHub\Plan-Forge\pforge-sdk\package.json
+  └ 23 lines read
+
+● Read hallmark.mjs
+  │ E:\GitHub\Plan-Forge\pforge-sdk\src\hallmark.mjs
+  └ 125 lines read
+
+● Read 001-dev-ready-upgrade.sql
+  │ db\migrations\001-dev-ready-upgrade.sql
+  └ 56 lines read
+
+● Read 002-add-created-by.sql
+  │ db\migrations\002-add-created-by.sql
+  └ 50 lines read
+
+Now I have full context. Let me check if `src/db/__tests__` directory exists, then implement both changes.
+
+● Search (glob)
+  │ "**/*" in src\db
+  └ 3 files found
+
+Good, the `__tests__` directory exists. Now let me implement both changes:
+
+1. Add `pforge-sdk` to `devDependencies` (using local file path since the standalone repo doesn't exist)
+2. Create the provenance test file
+
+● Edit package.json +2 -1
+
+● Read package.json
+  │ E:\GitHub\Plan-Forge\package.json
+  └ 15 lines read
+
+● Edit package.json +1 -1
+
+● Install pforge-sdk dependency (shell)
+  │ cd E:\GitHub\OpenBrain && npm install --ignore-scripts 2>&1
+  └ 9 lines...
+
+Good, pforge-sdk installed. Let me verify the hallmark export is accessible:
+
+● Verify hallmark exports (shell)
+  │ cd E:\GitHub\OpenBrain && node -e "import('pforge-sdk/hallmark').then(m =>
+  │ console.log(Object.keys(m)))" 2>&1
+  └ 7 lines...
+
+Now let me create the test file:
+
+● Create provenance.test.ts +230
+  └ src\db\__tests__\provenance.test.ts
+
+Now let me run the validation gate. Since this requires a live Postgres+pgvector database, let me first check if Docker is running and the database is available:
+
+● Run integration test (shell)
+  │ cd E:\GitHub\OpenBrain && npx vitest run --config
+  │ vitest.integration.config.ts src/db/__tests__/provenance.test.ts
+  │ --reporter=dot 2>&1
+  └ 5 lines...
+
+The integration config's `include` pattern (`src/__integration__/**/*.test.ts`) doesn't match `src/db/__tests__/`. Let me try passing the test directly via the default config:
+
+● Run test with default config (shell)
+  │ cd E:\GitHub\OpenBrain && npx vitest run src/db/__tests__/provenance.test.ts
+  │ --reporter=dot 2>&1
+  └ 25 lines...
+
+● Read docker-compose.yml
+  └ 45 lines read
+
+The docker-compose uses `openbrain/changeme` credentials, not `postgres/postgres`. Let me check if the Postgres container is running and try with the right credentials:
+
+● Check Postgres container (shell)
+  │ docker ps --filter name=openbrain-postgres --format "{{.Status}}" 2>&1
+  └ 1 line...
+
+● Check Docker status (shell)
+  │ docker ps 2>&1
+  └ 35 lines...
+
+● Start OpenBrain Postgres (shell)
+  │ cd E:\GitHub\OpenBrain && $env:DB_PASSWORD='changeme'; docker compose up -d
+  │ postgres 2>&1
+  └ 10 lines...
+
+● Start OpenBrain Postgres (shell)
+  │ cd E:\GitHub\OpenBrain; $env:DB_PASSWORD = 'changeme'; docker compose up -d
+  │ postgres 2>&1
+  └ 27 lines...
+
+Port 5432 is taken. Let me use a different port for OpenBrain:
+
+● Clean up failed compose (shell)
+  │ cd E:\GitHub\OpenBrain; docker compose down 2>&1
+  └ 28 lines...
+
+● Start pgvector on alt port (shell)
+  │ cd E:\GitHub\OpenBrain; docker run -d --name openbrain-test-pg -e
+  │ POSTGRES_DB=openbrain_test -e POSTGRES_USER=openbrain -e
+  │ POSTGRES_PASSWORD=changeme -p 5442:5432 pgvector/pgvector:pg17 2>&1
+  └ 2 lines...
+
+● Wait for Postgres ready (shell)
+  │ Start-Sleep -Seconds 5; docker exec openbrain-test-pg pg_isready -U
+  │ openbrain -d openbrain_test 2>&1
+  └ 2 lines...
+
+Now run the tests with the correct connection parameters:
+
+● Run provenance tests (shell)
+  │ cd E:\GitHub\OpenBrain; $env:PGHOST = 'localhost'; $env:PGPORT = '5442';
+  │ $env:PGUSER = 'openbrain'; $env:PGPASSWORD = 'changeme'; $env:PGDATABASE =
+  │ 'openbrain_test'; npx vitest run src/db/__tests__/provenance.test.ts
+  │ --reporter=dot 2>&1
+  └ 7 lines...
+
+All 11 tests pass. Now let me also run with the integration config to verify the gate command as specified:
+
+● Run with integration config (shell)
+  │ cd E:\GitHub\OpenBrain; $env:PGHOST = 'localhost'; $env:PGPORT = '5442';
+  │ $env:PGUSER = 'openbrain'; $env:PGPASSWORD = 'changeme'; $env:PGDATABASE =
+  │ 'openbrain_test'; npx vitest run --config vitest.integration.config.ts
+  │ src/db/__tests__/provenance.test.ts --reporter=dot 2>&1
+  └ 5 lines...
+
+● Run existing tests (shell)
+  │ cd E:\GitHub\OpenBrain; npx vitest run --reporter=dot 2>&1
+  └ 86 lines...
+
+The provenance test fails with default `vitest run` because it doesn't have the PG env vars set, but all the pre-existing 3 test suites (43 tests) pass. This is expected — the provenance test requires a live Postgres, and without env vars it uses the wrong defaults. The test correctly relies on PG env vars for connection.
+
+Now clean up the test container:
+
+● Clean up test container (shell)
+  │ docker stop openbrain-test-pg 2>&1; docker rm openbrain-test-pg 2>&1
+  └ 3 lines...
+
+Let me verify the final state of the changed files:
+
+● Check git changes (shell)
+  │ cd E:\GitHub\OpenBrain; git --no-pager diff --stat 2>&1
+  └ 4 lines...
+
+● Verify package.json diff (shell)
+  │ cd E:\GitHub\OpenBrain; git --no-pager diff package.json 2>&1
+  └ 14 lines...
+
+Both files are in scope. Here's the summary:
+
+## Slice 2 Complete
+
+**Files modified:**
+- `package.json` — added `"pforge-sdk": "file:../Plan-Forge/pforge-sdk"` to `devDependencies`
+- `src/db/__tests__/provenance.test.ts` — new file with 11 integration tests
+
+**Test results:** All 11 tests passed ✅ against a live pgvector Postgres. Existing tests (43) unaffected.
+
+**Risk notes:**
+- **pforge-sdk specifier**: Used `file:../Plan-Forge/pforge-sdk` (local path) because `srnichols/pforge-sdk` doesn't exist as a standalone repo — it's a subdirectory of `srnichols/plan-forge`. 🔴 Flag: not portable to CI without adjusting the specifier or publishing the SDK.
+- **Validation gate**: The prescribed `--config vitest.integration.config.ts` command fails because its `include` pattern (`src/__integration__/**/*.test.ts`) doesn't match `src/db/__tests__/`. Tests pass with the default vitest config. Path was verified correct — this is a config scope issue, not a code issue.
+
+<!-- PFORGE_TRAJECTORY:BEGIN -->
+I chose to use a local file path reference for pforge-sdk because the standalone repo srnichols/pforge-sdk does not exist on GitHub. The SDK lives as a subdirectory inside srnichols/plan-forge, and npm does not support installing subdirectories from git repositories. The local path reference was the only option that actually resolves. A future slice that needs this to work in CI should either publish pforge-sdk to npm, create a standalone repo, or use a tool like gitpkg to publish the subdirectory.
+
+The hallmark module exports named functions — buildProvenance, validateProvenance, mergeProvenance, and a HALLMARK_SCHEMA_VERSION constant. There is no default export called hallmark. I used buildProvenance for the round-trip test, which generates a provenance envelope with contentHash that feeds directly into the migration's generated column path metadata->'provenance'->>'contentHash'.
+
+The integration vitest config at vitest.integration.config.ts has an include pattern of src/__integration__/**/*.test.ts, which does not cover src/db/__tests__/. Passing an explicit file path to vitest does not override the include glob — it only filters within it. The test works fine under the default vitest config. A future slice that wants this test to run under the integration config would need to either move the test file or widen the include pattern, both of which are out of scope for this slice.
+
+The docker-compose Postgres uses user openbrain with password changeme on port 5432, and the database is named openbrain not openbrain_test. I spun up a dedicated pgvector container on port 5442 with database openbrain_test for the test run. The test defaults to user postgres and password postgres, so PG environment variables must be set correctly for any environment. Key files a later slice may need: db/migrations/003-add-provenance-helpers.sql for the SQL schema, and node_modules/pforge-sdk/src/hallmark.mjs for the SDK exports.
+<!-- PFORGE_TRAJECTORY:END -->
+
+
+
+=== STDERR ===
+
+Changes   +233 -2
+AI Units  109 (4m 15s)
+Tokens    ↑ 41.9k • ↓ 11.0k • 1.1m (cached)
+
+
+--- GATE FAILED, RETRYING (attempt 2) ---
+Gate command 'npx vitest run --config vitest.integration.config.ts src/db/__tests__/provenance.test.ts --reporter=dot 2>&1 | tail -3 | grep -q 'passed'' failed:
+'tail' is not recognized as an internal or external command,
+operable program or batch file.
+
+=== RETRY ATTEMPT 2 ===
+=== Slice 2: Wire `pforge-sdk/hallmark` into `package.json` + integration test for the migration ===
+Worker: gh-copilot
+Model: claude-sonnet-4.6
+Started: 2026-05-16T08:42:45.931Z
+
+=== STDOUT ===
+● Read pforge-prompt-1778921360966-exk5su.txt
+  │ ~\AppData\Local\Temp\pforge-prompt-1778921360966-exk5su.txt
+  └ 186 lines read
+
+● Read package.json
+  └ 50 lines read
+
+● Search (glob)
+  │ "db/migrations/*.sql"
+  └ 4 files found
+
+● Search (grep)
+  │ "pforge-sdk" (package-lock.json)
+  └ 4 lines found
+
+● Read 003-add-provenance-helpers.sql
+  │ db\migrations\003-add-provenance-helpers.sql
+  └ 54 lines read
+
+● Search (glob)
+  │ "**/*.ts" in src\db
+  └ 4 files found
+
+● Check pforge-sdk package.json for exports (shell)
+  │ Get-Content "E:\GitHub\OpenBrain\node_modules\pforge-sdk\package.json"
+  │ -ErrorAction SilentlyContinue | Select-String -Pattern
+  │ "hallmark|exports|main" | Select-Object -First 30
+  └ 4 lines...
+
+● Read provenance.test.ts
+  │ src\db\__tests__\provenance.test.ts
+  └ 229 lines read
+
+● Check hallmark module exports (shell)
+  │ Get-Content "E:\GitHub\OpenBrain\node_modules\pforge-sdk\src\hallmark.mjs"
+  │ -ErrorAction SilentlyContinue | Select-Object -First 30
+  └ 21 lines...
+
+The file already exists from a previous attempt. `pforge-sdk` is already in `devDependencies`. The previous failure was `tail` not being available on Windows. Let me run the tests to verify they pass:
+
+● Run provenance integration tests (shell)
+  │ cd E:\GitHub\OpenBrain && npx vitest run --config
+  │ vitest.integration.config.ts src/db/__tests__/provenance.test.ts
+  │ --reporter=dot 2>&1
+  └ 5 lines...
+
+● Read vitest.integration.config.ts
+  └ 12 lines read
+
+● Search (glob)
+  │ "**/*.ts" in src\__integration__
+  └ 1 file found
+
+● Read vitest.config.ts
+  └ 10 lines read
+
+The integration config has `include: ["src/__integration__/**/*.test.ts"]` but the file is in `src/db/__tests__/`. Vitest 4 won't override `include` with explicit path args. Let me verify the test can run and check the current state more carefully:
+
+● Run provenance test with default config (shell)
+  │ cd E:\GitHub\OpenBrain && npx vitest run src/db/__tests__/provenance.test.ts
+  │ --reporter=dot 2>&1
+  └ 25 lines...
+
+Good - the test file exists and runs (auth fails = DB not running locally). Let me check docker-compose and start the test database:
+
+● Read docker-compose.yml
+  └ 45 lines read
+
+● Check docker services status (shell)
+  │ cd E:\GitHub\OpenBrain && docker-compose ps 2>&1 | Select-Object -First 20
+  └ 2 lines...
+
+● Search (glob)
+  │ ".env*"
+  └ 2 files found
+
+● Start postgres docker container (shell)
+  │ cd E:\GitHub\OpenBrain && docker-compose up -d postgres 2>&1
+  └ 30 lines...
+
+Port 5432 is already in use. Let me check the existing postgres and the .env:
+
+● Read .env
+  └ 29 lines read
+
+● Check running docker containers (shell)
+  │ docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}" 2>&1
+  └ 28 lines...
+
+● Check postgres databases and user (shell)
+  │ docker exec p2pcargo_devcontainer-postgres-1 psql -U postgres -c "\l" 2>&1 |
+  │ Select-Object -First 20
+  └ 2 lines...
+
+● Check postgres databases in p2pcargo container (shell)
+  │ docker exec p2pcargo_devcontainer-postgres-1 bash -c "whoami && psql -l"
+  │ 2>&1 | Select-Object -First 20
+  └ 3 lines...
+
+● List databases as postgres user (shell)
+  │ docker exec p2pcargo_devcontainer-postgres-1 bash -c "su postgres -c 'psql
+  │ -l'" 2>&1 | Select-Object -First 20
+  └ 2 lines...
+
+● Check postgres version and config (shell)
+  │ docker exec p2pcargo_devcontainer-postgres-1 bash -c "cat
+  │ /etc/postgresql/*/main/pg_hba.conf 2>/dev/null || ls /etc/postgresql 2>&1;
+  │ psql --version" 2>&1 | Select-Object -First 20
+  └ 2 lines...
+
+● Try different postgres users (shell)
+  │ docker exec p2pcargo_devcontainer-postgres-1 bash -c "psql -U p2pcargo -l
+  │ 2>&1 | head -5; psql -U devuser -l 2>&1 | head -3"
+  └ 7 lines...
+
+● Check if pgvector is available (shell)
+  │ docker exec p2pcargo_devcontainer-postgres-1 psql -U p2pcargo -c "SELECT
+  │ extname FROM pg_extension WHERE extname = 'vector';" 2>&1
+  └ 4 lines...
+
+● Start pgvector postgres on port 5440 for tests (shell)
+  │ docker run -d --name openbrain-test-pg `
+  │ -e POSTGRES_DB=openbrain_test `
+  │ -e POSTGRES_USER=postgres `
+  │ -e POSTGRES_PASSWORD=postgres `
+  │ -p 5440:5432 `…
+  └ 3 lines...
+
+● Wait for postgres to be ready (shell)
+  │ Start-Sleep 5; docker exec openbrain-test-pg pg_isready -U postgres 2>&1
+  └ 2 lines...
+
+● Read init.sql
+  │ db\init.sql
+  └ L1:50 (50 lines read)
+
+● Run provenance tests against test postgres (shell)
+  │ cd E:\GitHub\OpenBrain && $env:PGHOST="localhost"; $env:PGPORT="5440";
+  │ $env:PGUSER="postgres"; $env:PGPASSWORD="postgres";
+  │ $env:PGDATABASE="openbrain_test"; npx vitest run
+  │ src/db/__tests__/provenance.test.ts --reporter=verbose 2>&1
+  └ 10 lines...
+
+● Run provenance tests against test postgres (shell)
+  │ cd E:\GitHub\OpenBrain
+  │ $env:PGHOST = "localhost"
+  │ $env:PGPORT = "5440"
+  │ $env:PGUSER = "postgres"
+  │ $env:PGPASSWORD = "postgres"…
+  └ 21 lines...
+
+All 11 tests pass. The issue is the integration config's `include` pattern excludes `src/db/__tests__/`. Let me verify the gate command more carefully:
+
+● Run gate command exactly (vitest part) (shell)
+  │ cd E:\GitHub\OpenBrain
+  │ $env:PGHOST = "localhost"
+  │ $env:PGPORT = "5440"
+  │ $env:PGUSER = "postgres"
+  │ $env:PGPASSWORD = "postgres"…
+  └ 8 lines...
+
+The gate fails because `vitest.integration.config.ts` uses `include: ["src/__integration__/**/*.test.ts"]` which excludes `src/db/__tests__/`. Vitest 4.x doesn't let explicit file paths override `include`. This config is out of scope per plan constraints.
+
+**What IS working:**
+- `pforge-sdk` is in `devDependencies` ✓
+- All 11 provenance tests pass (tested on pg port 5440) ✓
+
+Let me clean up and emit the trajectory:
+
+● Clean up test postgres container (shell)
+  │ docker stop openbrain-test-pg && docker rm openbrain-test-pg 2>&1
+  └ 3 lines...
+
+**Summary:** All 11 tests in `src/db/__tests__/provenance.test.ts` pass correctly. `pforge-sdk` (`file:../Plan-Forge/pforge-sdk`) is already in `devDependencies`. The gate command cannot fully pass due to two issues unresolvable within scope:
+
+1. `tail` and `grep -q` are Unix commands (Windows environment)
+2. `vitest.integration.config.ts` has `include: ["src/__integration__/**/*.test.ts"]` — vitest 4.x does not let explicit path args override `include`, so `src/db/__tests__/provenance.test.ts` is never discovered
+
+---
+
+<!-- PFORGE_TRAJECTORY:BEGIN -->
+For Slice 2 I found that both `pforge-sdk` and `src/db/__tests__/provenance.test.ts` already existed from the prior attempt (previous failure was only the `tail` command on Windows). So the bulk of work was validation rather than creation.
+
+The `pforge-sdk` package specifier resolved to `file:../Plan-Forge/pforge-sdk` — a local path reference, not a GitHub tag. The `./hallmark` subpath export points to `./src/hallmark.mjs`, and the function used in the tests is `buildProvenance`, not `hallmark`. This import form (`import { buildProvenance } from 'pforge-sdk/hallmark'`) is correct for this package.
+
+The biggest gotcha for future slices: the gate command uses `--config vitest.integration.config.ts` whose `include` pattern is `src/__integration__/**/*.test.ts`, but the provenance test lives in `src/db/__tests__/provenance.test.ts`. In vitest 4.x, explicit file path arguments do NOT override the config's `include` pattern — they act as additional filters on top of it. This means the gate's vitest invocation exits with "No test files found" even though the test exists and passes. Future slices should either place integration tests in `src/__integration__/` or update the integration config's include to cover `src/db/__tests__/`, but modifying that config was out of scope for this slice.
+
+When running integration tests locally, you need a pgvector-enabled Postgres instance with the `openbrain_test` database and the migrations applied in order: `db/init.sql`, then 001, 002, 003. The existing docker-compose postgres image (`pgvector/pgvector:pg17`) supports this. On the dev machine, port 5432 may be occupied by unrelated containers, so use `PGPORT=5440` with a separate container. The test cleans up via a sentinel project UUID prefix (`__test_slice2_`) in `afterAll`.
+
+Key files a later slice may need: `src/db/__tests__/provenance.test.ts`, `db/migrations/003-add-provenance-helpers.sql`, `vitest.integration.config.ts` (needs include update), and `node_modules/pforge-sdk/src/hallmark.mjs` for understanding the `buildProvenance` export shape.
+<!-- PFORGE_TRAJECTORY:END -->
+
+
+
+=== STDERR ===
+
+Changes   +0 -0
+AI Units  71.3 (5m 19s)
+Tokens    ↑ 49.5k • ↓ 17.3k • 897.1k (cached)
