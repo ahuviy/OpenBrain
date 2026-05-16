@@ -1,0 +1,20 @@
+[
+  {
+    "date": "2026-05-16T08:54:42.600Z",
+    "plan": "E:\\GitHub\\OpenBrain\\docs\\plans\\Phase-PROVENANCE-PLAN.md",
+    "sliceCount": 5,
+    "status": "failed",
+    "total_tokens_in": 62800,
+    "total_tokens_out": 19500,
+    "total_cost_usd": 0.02,
+    "by_model": {
+      "claude-sonnet-4.6": {
+        "tokens_in": 62800,
+        "tokens_out": 19500,
+        "cost_usd": 0.02,
+        "slices": 2
+      }
+    },
+    "duration_ms": 875343
+  }
+]

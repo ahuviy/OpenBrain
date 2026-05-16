@@ -1,0 +1,20 @@
+{
+  "sliceNumber": "2",
+  "sliceTitle": "Wire `pforge-sdk/hallmark` into `package.json` + integration test for the migration",
+  "capturedAt": "2026-05-16T08:54:42.600Z",
+  "staged": true,
+  "stageError": null,
+  "files": [
+    "package-lock.json",
+    "package.json",
+    ".forge/",
+    "docs/plans/",
+    "src/db/__tests__/provenance.test.ts"
+  ],
+  "recovery": [
+    "git status --short  # review staged files",
+    "git diff --cached   # see what the worker wrote",
+    "git commit -m \"feat(slice-2): <subject>\"   # if deliverables are correct",
+    "git restore --staged . && git restore .                  # if deliverables are wrong"
+  ]
+}

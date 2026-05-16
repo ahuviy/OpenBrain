@@ -147,13 +147,13 @@ grep -q 'source_file_hash' db/migrations/003-add-provenance-helpers.sql && grep 
 
 **Files**:
 - `package.json` (modify — add `pforge-sdk` to `devDependencies` via workspace/git path)
-- `src/db/__tests__/provenance.test.ts` (new)
+- `src/__integration__/provenance.test.ts` (new)
 
 **Depends On**: Slice 1, and Phase-HALLMARK-CONTRACT Slice 3 published.
 
 **Validation Gate**:
 ```bash
-npx vitest run --config vitest.integration.config.ts src/db/__tests__/provenance.test.ts --reporter=dot && echo ok
+npx vitest run --config vitest.integration.config.ts src/__integration__/provenance.test.ts --reporter=dot && echo ok
 ```
 
 ---

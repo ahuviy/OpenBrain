@@ -1,0 +1,107 @@
+{
+  "resource": {
+    "service.name": "plan-forge-orchestrator",
+    "service.version": "2.4.0",
+    "host.name": "SRN-Homebase",
+    "os.type": "Windows_NT",
+    "user.name": "Scott Nichols",
+    "project.name": "OpenBrain"
+  },
+  "traceId": "bc120c08726e47c58bf51a6954ae3343",
+  "spans": [
+    {
+      "spanId": "82b656c9dee244c0",
+      "parentSpanId": null,
+      "name": "run-plan",
+      "kind": "SERVER",
+      "startTime": "2026-05-16T08:40:06.752Z",
+      "endTime": "2026-05-16T08:54:42.601Z",
+      "status": "ERROR",
+      "attributes": {
+        "plan": "E:\\GitHub\\OpenBrain\\docs\\plans\\Phase-PROVENANCE-PLAN.md",
+        "mode": "auto",
+        "model": "claude-opus-4.6",
+        "sliceCount": 5
+      },
+      "events": [
+        {
+          "time": "2026-05-16T08:54:42.601Z",
+          "name": "completed",
+          "severity": "INFO",
+          "severityNumber": 9,
+          "attributes": {
+            "status": "failed",
+            "passed": 1,
+            "failed": 1,
+            "report": "All slices: 1 passed, 1 failed. Cost: $0.02."
+          }
+        }
+      ],
+      "logSummary": []
+    },
+    {
+      "spanId": "b6592bec39a445ef",
+      "parentSpanId": "82b656c9dee244c0",
+      "name": "slice-1",
+      "kind": "INTERNAL",
+      "startTime": "2026-05-16T08:40:06.754Z",
+      "endTime": "2026-05-16T08:42:45.848Z",
+      "status": "OK",
+      "attributes": {
+        "sliceId": "1",
+        "title": "Migration 003 + rollback file",
+        "parallel": false,
+        "pforge.actor.source": null,
+        "pforge.action.security_risk": null,
+        "duration": 158785,
+        "model": "claude-sonnet-4.6",
+        "cost_usd": 0.01,
+        "attempts": 1
+      },
+      "events": [
+        {
+          "time": "2026-05-16T08:42:45.847Z",
+          "name": "completed",
+          "severity": "INFO",
+          "severityNumber": 9,
+          "attributes": {
+            "duration": 158785,
+            "model": "claude-sonnet-4.6",
+            "tokens_out": 2200,
+            "attempts": 1
+          }
+        }
+      ],
+      "logSummary": []
+    },
+    {
+      "spanId": "fb4665b1311b47ac",
+      "parentSpanId": "82b656c9dee244c0",
+      "name": "slice-2",
+      "kind": "INTERNAL",
+      "startTime": "2026-05-16T08:42:45.848Z",
+      "endTime": "2026-05-16T08:54:42.600Z",
+      "status": "ERROR",
+      "attributes": {
+        "sliceId": "2",
+        "title": "Wire `pforge-sdk/hallmark` into `package.json` + integration test for the migration",
+        "parallel": false,
+        "pforge.actor.source": null,
+        "pforge.action.security_risk": null
+      },
+      "events": [
+        {
+          "time": "2026-05-16T08:54:42.600Z",
+          "name": "failed",
+          "severity": "ERROR",
+          "severityNumber": 17,
+          "attributes": {
+            "failedCommand": "npx vitest run --config vitest.integration.config.ts src/db/__tests__/provenance.test.ts --reporter=dot 2>&1 | tail -3 | grep -q 'passed'",
+            "gateError": "'tail' is not recognized as an internal or external command,\r\noperable program or batch file."
+          }
+        }
+      ],
+      "logSummary": []
+    }
+  ]
+}

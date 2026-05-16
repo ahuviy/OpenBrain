@@ -7,11 +7,11 @@ import { randomUUID } from 'node:crypto';
 import { buildProvenance } from 'pforge-sdk/hallmark';
 
 const pool = new Pool({
-  host: process.env.PGHOST ?? 'localhost',
-  port: Number(process.env.PGPORT ?? 5432),
-  user: process.env.PGUSER ?? 'postgres',
-  password: process.env.PGPASSWORD ?? 'postgres',
-  database: process.env.PGDATABASE ?? 'openbrain_test',
+  host: process.env.DB_HOST_TEST ?? process.env.DB_HOST ?? 'localhost',
+  port: Number(process.env.DB_PORT ?? 5432),
+  user: process.env.DB_USER ?? 'openbrain',
+  password: process.env.DB_PASSWORD ?? 'changeme',
+  database: process.env.DB_NAME ?? 'openbrain',
 });
 
 const SENTINEL = `__test_slice2_${randomUUID()}`;

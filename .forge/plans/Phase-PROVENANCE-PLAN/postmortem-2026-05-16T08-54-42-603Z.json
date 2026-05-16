@@ -1,0 +1,17 @@
+{
+  "planBasename": "Phase-PROVENANCE-PLAN",
+  "createdAt": "2026-05-16T08:54:42.603Z",
+  "status": "failed",
+  "totalDurationMs": 875343,
+  "retriesPerSlice": {
+    "2": 2
+  },
+  "gateFlaps": 0,
+  "topFailureReason": "npx vitest run --config vitest.integration.config.ts src/db/__tests__/provenance.test.ts --reporter=dot 2>&1 | tail -3 |",
+  "costDelta": {
+    "before": null,
+    "after": 0.02,
+    "delta": null
+  },
+  "driftDelta": null
+}
