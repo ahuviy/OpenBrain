@@ -1,0 +1,67 @@
+# Open Brain — Docker Desktop dev box compose
+# Tuned for Windows / macOS Docker Desktop with Ollama running on the host.
+#
+# Usage (from this directory):
+#   cp ../../.env.example .env
+#   # edit .env, set MCP_ACCESS_KEY
+#   docker compose up -d
+#
+# Or from the repo root:
+#   docker compose -f deploy/devbox/docker-compose.devbox.yml up -d
+#
+# See docs/11-DOCKER-DESKTOP-DEVBOX.md for the full walkthrough.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: openbrain-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: openbrain
+      POSTGRES_USER: openbrain
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      - ../../db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "openbrain"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: openbrain-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      # Ollama runs on the host, not in a container — `host.docker.internal`
+      # resolves to the host on Docker Desktop (Win/Mac) automatically.
+      OLLAMA_ENDPOINT: ${OLLAMA_ENDPOINT:-http://host.docker.internal:11434}
+      EMBEDDER_PROVIDER: ${EMBEDDER_PROVIDER:-ollama}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
+    ports:
+      - "${API_PORT:-8000}:8000"
+      - "${MCP_PORT:-8080}:8080"
+    extra_hosts:
+      # Belt-and-suspenders for Linux Docker, where host.docker.internal
+      # isn't defined by default. No-op on Windows/Mac Docker Desktop.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:

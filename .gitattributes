@@ -1,0 +1,4 @@
+# Keep shell scripts executable + LF on checkout (Windows-friendly authoring)
+*.sh   text eol=lf
+scripts/*.sh   text eol=lf
+setup.sh       text eol=lf

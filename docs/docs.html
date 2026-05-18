@@ -63,11 +63,22 @@
                 <a href="#capture" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">Capture Pipeline</a>
                 <a href="#prompts" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">Prompt Kit</a>
 
+                <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 mt-6">Integrations</div>
+                <a href="#plan-forge" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">🔨 Plan Forge</a>
+
                 <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 mt-6">Deployment</div>
-                <a href="#deployment" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">Supabase Deploy</a>
-                <a href="#docker" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">Docker Compose</a>
-                <a href="#kubernetes" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">Kubernetes</a>
+                <a href="#deployment" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">All paths</a>
+                <a href="#devbox" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">🖥️ Docker Desktop dev box</a>
+                <a href="#docker" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">🐳 Docker Compose</a>
+                <a href="#hosted" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">☁️ Cheap hosted</a>
+                <a href="#kubernetes" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">☸️ Kubernetes</a>
+                <a href="#azure" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">🚀 Azure</a>
                 <a href="#roadmap" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">Roadmap</a>
+
+                <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 mt-6">Bootstrap</div>
+                <a href="#easy-setup" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">🤖 AI-prompted setup</a>
+                <a href="#verify" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">✅ verify script</a>
+                <a href="#first-hour" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">⏱️ Your first hour</a>
 
                 <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 mt-6">Reference</div>
                 <a href="#client-config" class="sidebar-link block py-1.5 px-3 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-l-2 border-transparent">Client Configuration</a>
@@ -120,12 +131,13 @@
 
                 <h3 class="text-lg font-semibold mt-8 mb-3">Cost</h3>
                 <table>
-                    <thead><tr><th>Deployment</th><th>Monthly Cost</th></tr></thead>
+                    <thead><tr><th>Deployment</th><th>Time</th><th>Monthly Cost</th></tr></thead>
                     <tbody>
-                        <tr><td>Docker Compose (self-hosted)</td><td>$0</td></tr>
-                        <tr><td>Kubernetes homelab</td><td>$0 (adds to existing cluster)</td></tr>
-                        <tr><td>Supabase Cloud + OpenRouter</td><td>$0.10 – $0.30</td></tr>
-                        <tr><td>Azure Managed</td><td>Varies by tier</td></tr>
+                        <tr><td>🖥️ Docker Desktop dev box (Win/Mac)</td><td>~10 min</td><td>$0</td></tr>
+                        <tr><td>🐳 Docker Compose (Linux server / NAS / Pi)</td><td>~10 min</td><td>$0–5</td></tr>
+                        <tr><td>☁️ Cheap hosted (Supabase / Neon + Fly.io)</td><td>~30 min</td><td>$0–5</td></tr>
+                        <tr><td>☸️ Kubernetes homelab</td><td>~1 hour</td><td>$0 (own hardware)</td></tr>
+                        <tr><td>🚀 Azure managed (Bicep)</td><td>~20 min</td><td>~$15–20</td></tr>
                     </tbody>
                 </table>
             </section>
@@ -252,7 +264,7 @@ PostgreSQL + pgvector
             <!-- MCP Server -->
             <section id="mcp-server" class="mb-20">
                 <h2 class="text-2xl font-bold mb-4">MCP Server</h2>
-                <p class="text-gray-600 leading-relaxed mb-6">Open Brain's MCP server exposes 7 tools via the <a href="https://modelcontextprotocol.io" class="text-brand-600 hover:underline">Model Context Protocol</a>, Anthropic's open standard for AI-to-tool integration. Uses SSE transport over HTTP.</p>
+                <p class="text-gray-600 leading-relaxed mb-6">Open Brain's MCP server exposes 7 tools via the <a href="https://modelcontextprotocol.io" class="text-brand-600 hover:underline">Model Context Protocol</a>, an open standard for AI-to-tool integration. Uses SSE transport over HTTP.</p>
 
                 <h3 class="text-lg font-semibold mt-8 mb-3">Tools</h3>
                 <div class="space-y-4">
@@ -385,29 +397,172 @@ POST /messages?sessionId=xxx           → JSON-RPC calls (no key needed)</code>
                 </div>
             </section>
 
-            <!-- Deployment -->
-            <section id="deployment" class="mb-20">
-                <h2 class="text-2xl font-bold mb-4">Supabase Deployment</h2>
-                <p class="text-gray-600 leading-relaxed mb-6">Deploy to Supabase's free tier with Edge Functions. ~45 minutes, ~$0.10-$0.30/month.</p>
-                <p class="text-gray-500 text-sm mb-4">Full step-by-step guide in <a href="https://github.com/srnichols/OpenBrain/blob/master/07-DEPLOYMENT.md" class="text-brand-600 hover:underline">07-DEPLOYMENT.md</a>.</p>
+            <!-- Plan Forge integration -->
+            <section id="plan-forge" class="mb-20">
+                <div class="flex items-center gap-3 mb-4">
+                    <h2 class="text-2xl font-bold">🔨 Plan Forge integration</h2>
+                    <span class="text-xs font-medium text-white bg-brand-600 px-2 py-0.5 rounded">v0.7.0+</span>
+                </div>
+                <p class="text-gray-600 leading-relaxed mb-6">
+                    <a href="https://github.com/srnichols/plan-forge" class="text-brand-600 hover:underline">Plan Forge</a> is an agentic project execution system. In Plan Forge's
+                    <a href="https://github.com/srnichols/plan-forge/blob/master/docs/UNIFIED-SYSTEM-ARCHITECTURE.md" class="text-brand-600 hover:underline">unified memory architecture</a>,
+                    Open Brain is the <strong>L3 layer</strong> &mdash; permanent, cross-project, semantic memory. Skills run <code>search_thoughts</code> before acting,
+                    and <code>capture_thought</code> after, so architecture decisions, patterns, and postmortems are preserved across runs and tools.
+                </p>
 
-                <ol class="space-y-3 text-sm text-gray-600">
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">1.</span> Create Supabase project</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">2.</span> Set up database (pgvector extension, thoughts table, indexes, match_thoughts function)</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">3.</span> Get OpenRouter API key</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">4.</span> Generate MCP access key (<code>openssl rand -hex 32</code>)</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">5.</span> Set Supabase secrets</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">6.</span> Deploy Edge Functions</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">7.</span> Configure AI clients</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">8.</span> Slack integration (optional)</li>
-                    <li class="flex gap-3"><span class="font-bold text-brand-600 shrink-0">9.</span> Verify everything works</li>
-                </ol>
+                <h3 class="text-lg font-semibold mt-8 mb-3">Memory layers (Plan Forge's view)</h3>
+                <table>
+                    <thead><tr><th>Layer</th><th>Backing</th><th>Lifetime</th><th>What lives there</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>L1</strong></td><td>process state</td><td>per-call</td><td>tool inputs / outputs in flight</td></tr>
+                        <tr><td><strong>L2</strong></td><td><code>.forge/*.jsonl</code></td><td>per-project</td><td>queues, dead-letter, run trajectories</td></tr>
+                        <tr><td><strong>L3</strong></td><td><strong>Open Brain</strong> (Postgres + pgvector)</td><td>permanent, cross-project</td><td>decisions, patterns, conventions, postmortems</td></tr>
+                    </tbody>
+                </table>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">Hallmark provenance envelope</h3>
+                <p class="text-gray-600 text-sm mb-4">
+                    Plan Forge wraps every L3 write in a <a href="https://github.com/srnichols/plan-forge/blob/master/pforge-sdk/hallmark/README.md" class="text-brand-600 hover:underline">Hallmark v1</a> envelope under
+                    <code>metadata.provenance</code>. Open Brain projects two fields out as <strong>generated columns</strong>
+                    (<code>source_file_hash</code>, <code>code_hash</code>) with partial indexes, plus a sibling RPC
+                    (<a href="#database" class="text-brand-600 hover:underline">match_thoughts_by_source</a>) and a REST endpoint
+                    (<code>GET /memories/by-source</code>) for exact-source deduplication.
+                </p>
+                <pre><code>{
+  "content": "Decision: pgvector over pinecone for OSS-friendliness",
+  "metadata": {
+    "provenance": {
+      "schemaVersion": "hallmark-provenance.v1",
+      "contentHash":   "sha256:abcd...",
+      "codeHash":      "sha256:ef01...",
+      "phase":         "Phase-3-Slice-2",
+      "tool":          "forge_step3_execute_slice"
+    }
+  }
+}</code></pre>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">Capability negotiation</h3>
+                <p class="text-gray-600 text-sm mb-4">
+                    Before stamping provenance, Plan Forge checks Open Brain's <code>/health</code> response.
+                    The presence of <code>"by-source"</code> in <code>capabilities[]</code> means the server understands the Hallmark envelope and the
+                    by-source lookup path. Older servers get bare thoughts (no Hallmark) &mdash; everything degrades transparently.
+                </p>
+                <pre><code>curl https://openbrain.example.com/health
+# {
+#   "status": "healthy",
+#   "service": "open-brain-api",
+#   "capabilities": ["capture","search","list","batch","update","delete","stats","by-source"]
+# }</code></pre>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">Resilience: the OpenBrain queue</h3>
+                <p class="text-gray-600 text-sm mb-4">
+                    When Open Brain is unreachable, Plan Forge does <em>not</em> drop the thought. It writes it to
+                    <code>.forge/openbrain-queue.jsonl</code> (L2) and drains the queue back to Open Brain later via <code>forge_anvil_dlq_drain</code>.
+                    Failed writes that Open Brain rejects (e.g. a malformed Hallmark envelope) land in the <strong>Slag-Heap</strong> DLQ for inspection.
+                    This means Plan Forge can keep working offline, on a flight, or during a brief outage &mdash; no thought is lost.
+                </p>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">Recommended Plan Forge tools</h3>
+                <table>
+                    <thead><tr><th>Tool</th><th>Purpose</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>captureMemory()</code> SDK</td><td>L3 write &mdash; auto-wraps in Hallmark envelope</td></tr>
+                        <tr><td><code>forge_sync_memories</code></td><td>Mirror L3 hot thoughts into Copilot's <code>.github/instructions/</code></td></tr>
+                        <tr><td><code>forge_hallmark_show</code> · <code>forge_hallmark_verify</code></td><td>Inspect / verify a thought's provenance envelope</td></tr>
+                        <tr><td><code>forge_anvil_dlq_drain</code></td><td>Replay queued / DLQ writes against a live Open Brain</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="p-4 rounded-lg border border-brand-100 bg-brand-50/30 text-sm my-6">
+                    <strong>You don't need Plan Forge.</strong> Open Brain works standalone with any MCP client. Provenance is purely opt-in &mdash;
+                    bare thoughts (no Hallmark envelope) are still accepted, indexed and searchable. Plan Forge just gets you exact-source
+                    deduplication and traceability for free if you're already using it.
+                </div>
+
+                <p class="text-sm text-gray-500 mt-4">
+                    Full integration spec in
+                    <a href="https://github.com/srnichols/plan-forge/blob/master/docs/MEMORY-ARCHITECTURE.md" class="text-brand-600 hover:underline">Plan Forge · MEMORY-ARCHITECTURE.md</a>
+                    and
+                    <a href="https://github.com/srnichols/plan-forge/blob/master/docs/UNIFIED-SYSTEM-ARCHITECTURE.md" class="text-brand-600 hover:underline">UNIFIED-SYSTEM-ARCHITECTURE.md</a>.
+                </p>
+            </section>\n\n            <!-- Deployment -->
+            <section id="deployment" class="mb-20">
+                <h2 class="text-2xl font-bold mb-4">Deployment — pick a path</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">Open Brain runs anywhere PostgreSQL + Node can run. There are <strong>five canonical paths</strong>, all using the same MCP tools and AI clients. Pick the one that matches how you want to use it.</p>
+
+                <div class="overflow-x-auto">
+                <table>
+                    <thead><tr><th>Path</th><th>Best for</th><th>Time</th><th>Cost</th><th>Skill</th></tr></thead>
+                    <tbody>
+                        <tr><td><a href="#devbox" class="text-brand-600 hover:underline">🖥️ Docker Desktop dev box</a></td><td>Solo dev, Win/Mac laptop, fully local</td><td>~10 min</td><td>$0</td><td>Beginner</td></tr>
+                        <tr><td><a href="#docker" class="text-brand-600 hover:underline">🐳 Docker Compose (Linux)</a></td><td>Headless server / NAS / Pi / VPS</td><td>~10 min</td><td>$0–5</td><td>Beginner</td></tr>
+                        <tr><td><a href="#hosted" class="text-brand-600 hover:underline">☁️ Cheap hosted</a></td><td>Always-on, accessible anywhere</td><td>~30 min</td><td>$0–5</td><td>Beginner</td></tr>
+                        <tr><td><a href="#kubernetes" class="text-brand-600 hover:underline">☸️ Kubernetes</a></td><td>Homelab / on-prem / privacy</td><td>~1 hour</td><td>$0 hw</td><td>Intermediate</td></tr>
+                        <tr><td><a href="#azure" class="text-brand-600 hover:underline">🚀 Azure</a></td><td>Teams / production / managed</td><td>~20 min</td><td>~$15–20</td><td>Intermediate</td></tr>
+                    </tbody>
+                </table>
+                </div>
+
+                <div class="p-4 rounded-lg border border-brand-100 bg-brand-50/30 text-sm my-6">
+                    <strong>Using AWS or GCP?</strong> Open Brain is provider-agnostic — only Azure ships ready-made IaC.
+                    See the <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/10-AZURE-DEPLOYMENT.md#equivalents-on-aws--gcp" class="text-brand-600 hover:underline">AWS &amp; GCP equivalents table</a>
+                    for service mapping (Container Apps → ECS / Cloud Run, Azure PostgreSQL Flex → RDS / Cloud SQL, Azure OpenAI → Bedrock / Vertex AI).
+                </div>
+            </section>
+
+            <!-- Docker Desktop dev box -->
+            <section id="devbox" class="mb-20">
+                <h2 class="text-2xl font-bold mb-4">🖥️ Docker Desktop dev box</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">The friendliest path for Windows / macOS laptops. ~10 minutes, $0, fully private. Recommended starting point for most people.</p>
+
+                <pre><code>git clone https://github.com/srnichols/OpenBrain.git
+cd OpenBrain
+
+# Wizard (PowerShell on Windows, bash on Mac)
+.\setup.ps1   # or:  ./setup.sh
+
+# Verify
+.\scripts\verify.ps1 http://localhost:8000</code></pre>
+
+                <p class="text-sm text-gray-500 mt-4">Ollama runs natively on your host; everything else lives in Docker. Full walkthrough in <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/11-DOCKER-DESKTOP-DEVBOX.md" class="text-brand-600 hover:underline">11-DOCKER-DESKTOP-DEVBOX.md</a>.</p>
+            </section>
+
+            <!-- Hosted -->
+            <section id="hosted" class="mb-20">
+                <h2 class="text-2xl font-bold mb-4">☁️ Cheap hosted (Supabase / Neon + Fly.io)</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">Always-on, accessible from any device, ~$0–5/month. The closest match to Nate B Jones' original Open Brain spirit — hosted Postgres + a tiny serverless MCP runtime.</p>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">Pick Postgres</h3>
+                <table>
+                    <thead><tr><th>Provider</th><th>Free tier</th><th>Best for</th></tr></thead>
+                    <tbody>
+                        <tr><td>Supabase</td><td>500 MB, pauses when idle</td><td>Most people — nice UI, closest to Nate's original</td></tr>
+                        <tr><td>Neon</td><td>0.5 GB, serverless, ~1 sec cold start</td><td>Devs who want git-style DB branches</td></tr>
+                        <tr><td>Railway</td><td>$5 trial, then ~$5/mo</td><td>One-stop deploy with the MCP server</td></tr>
+                        <tr><td>Render</td><td>1 GB free, expires after 90 days</td><td>Short-term testing</td></tr>
+                    </tbody>
+                </table>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">Pick MCP runtime</h3>
+                <p class="text-sm text-gray-600 mb-3"><strong>Recommended:</strong> Fly.io with the ready-made <code>deploy/hosted/fly/fly.toml</code>. Free tier covers a personal install with ~1 sec wake from suspend.</p>
+
+                <pre><code>cd deploy/hosted/fly
+fly launch --copy-config --no-deploy --name openbrain-&lt;handle&gt;
+fly secrets set \
+  DATABASE_URL='postgresql://...' \
+  MCP_ACCESS_KEY="$(openssl rand -hex 32)" \
+  EMBEDDER_PROVIDER=openrouter \
+  OPENROUTER_API_KEY='sk-or-...' \
+  EMBEDDING_DIMENSIONS=1536
+fly deploy</code></pre>
+
+                <p class="text-sm text-gray-500 mt-4">Render and Railway templates are also included. Full walkthrough in <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/12-HOSTED-CHEAP.md" class="text-brand-600 hover:underline">12-HOSTED-CHEAP.md</a>.</p>
             </section>
 
             <!-- Docker -->
             <section id="docker" class="mb-20">
-                <h2 class="text-2xl font-bold mb-4">Docker Compose</h2>
-                <p class="text-gray-600 leading-relaxed mb-6">The fastest path — PostgreSQL + pgvector + Ollama + API server in one command.</p>
+                <h2 class="text-2xl font-bold mb-4">🐳 Docker Compose (Linux servers)</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">For headless Linux hosts — a NAS, Raspberry Pi, VPS, or any always-on server. Same compose stack the dev box uses, just without Docker Desktop's host helpers.</p>
 
                 <pre><code># Clone the repo
 git clone https://github.com/srnichols/OpenBrain.git
@@ -415,21 +570,20 @@ cd OpenBrain
 
 # Configure
 cp .env.example .env
-# Edit .env with your settings
+# Edit .env with your settings (MCP_ACCESS_KEY, embedder, etc.)
 
 # Start everything
 docker compose up -d
 
-# Verify
-curl http://localhost:8000/health
-curl http://localhost:8080/health</code></pre>
+# Verify (universal smoke test)
+./scripts/verify.sh http://localhost:8000</code></pre>
 
-                <p class="text-sm text-gray-500 mt-4">The Docker Compose stack includes PostgreSQL with pgvector pre-configured, Ollama for local embeddings (nomic-embed-text), and the Open Brain API + MCP server.</p>
+                <p class="text-sm text-gray-500 mt-4">The Docker Compose stack includes PostgreSQL with pgvector pre-configured, the Open Brain API + MCP server, and reaches Ollama either on the host or via OpenRouter / Azure OpenAI based on your <code>.env</code>.</p>
             </section>
 
             <!-- Kubernetes -->
             <section id="kubernetes" class="mb-20">
-                <h2 class="text-2xl font-bold mb-4">Kubernetes Deployment</h2>
+                <h2 class="text-2xl font-bold mb-4">☸️ Kubernetes Deployment</h2>
                 <p class="text-gray-600 leading-relaxed mb-6">Full homelab deployment with Tailscale networking, MetalLB, Ollama GPU, and monitoring integration.</p>
 
                 <h3 class="text-lg font-semibold mt-8 mb-3">Stack</h3>
@@ -463,7 +617,84 @@ curl http://localhost:8080/health</code></pre>
                     <li>• <strong>Auth</strong> — API key is checked on <code>/sse</code> only. <code>/messages</code> uses sessionId for implicit auth.</li>
                 </ul>
 
-                <p class="text-sm text-gray-500 mt-4">Full guide in <a href="https://github.com/srnichols/OpenBrain/blob/master/09-SELF-HOSTED-K8S.md" class="text-brand-600 hover:underline">09-SELF-HOSTED-K8S.md</a>.</p>
+                <p class="text-sm text-gray-500 mt-4">Full guide in <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/09-SELF-HOSTED-K8S.md" class="text-brand-600 hover:underline">docs/09-SELF-HOSTED-K8S.md</a>.</p>
+            </section>
+
+            <!-- Azure -->
+            <section id="azure" class="mb-20">
+                <h2 class="text-2xl font-bold mb-4">🚀 Azure (managed)</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">One-command Bicep deploy: Azure Container Apps + Azure PostgreSQL Flexible Server + Azure OpenAI + Key Vault. Fully managed, scale-to-zero, ~$15–20/month for personal use.</p>
+
+                <pre><code>git clone https://github.com/srnichols/OpenBrain.git
+cd OpenBrain
+
+.\deploy\azure\deploy.ps1 -ResourceGroup rg-openbrain -Location eastus2</code></pre>
+
+                <p class="text-sm text-gray-600 mt-4">The script generates secrets, deploys Bicep, seeds the database, and prints the MCP endpoint + key. Embeddings via Azure OpenAI <code>text-embedding-3-small</code> (1536 dim).</p>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">AWS &amp; GCP equivalents</h3>
+                <p class="text-gray-600 text-sm mb-3">Open Brain itself is provider-agnostic; only the Bicep is Azure-specific. The same architecture maps to:</p>
+                <table>
+                    <thead><tr><th>Concern</th><th>Azure</th><th>AWS</th><th>GCP</th></tr></thead>
+                    <tbody>
+                        <tr><td>Container runtime</td><td>Container Apps</td><td>ECS Fargate / App Runner</td><td>Cloud Run</td></tr>
+                        <tr><td>Managed Postgres</td><td>PostgreSQL Flex (pgvector)</td><td>RDS / Aurora PostgreSQL</td><td>Cloud SQL / AlloyDB</td></tr>
+                        <tr><td>Embeddings + LLM</td><td>Azure OpenAI</td><td>Amazon Bedrock</td><td>Vertex AI</td></tr>
+                        <tr><td>Secrets</td><td>Key Vault</td><td>Secrets Manager</td><td>Secret Manager</td></tr>
+                    </tbody>
+                </table>
+                <p class="text-sm text-gray-500 mt-4">Full mapping &amp; cost-parity table in <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/10-AZURE-DEPLOYMENT.md#equivalents-on-aws--gcp" class="text-brand-600 hover:underline">10-AZURE-DEPLOYMENT.md → Equivalents</a>. PRs welcome for AWS / GCP IaC.</p>
+
+                <p class="text-sm text-gray-500 mt-4">Full guide in <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/10-AZURE-DEPLOYMENT.md" class="text-brand-600 hover:underline">docs/10-AZURE-DEPLOYMENT.md</a>.</p>
+            </section>
+
+            <!-- Bootstrap helpers -->
+            <section id="easy-setup" class="mb-20">
+                <h2 class="text-2xl font-bold mb-4">🤖 AI-prompted setup (EASY-SETUP.md)</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">Don't want to run the commands yourself? Paste a prompt into any AI agent (VS Code Copilot, Claude Code, Cursor, Claude Desktop with terminal) and it'll do the install for you.</p>
+
+                <p class="text-sm text-gray-600 mb-4">EASY-SETUP.md has <strong>one prompt per deployment path</strong>, plus a "Help me decide" prompt that asks 3 questions and routes you to the right one:</p>
+
+                <ul class="space-y-2 text-sm text-gray-600 mb-4">
+                    <li>• 🖥️ Docker Desktop dev box prompt</li>
+                    <li>• 🐳 Docker Compose (Linux) prompt</li>
+                    <li>• ☁️ Cheap hosted (Fly + Supabase) prompt</li>
+                    <li>• ☸️ Kubernetes prompt</li>
+                    <li>• 🚀 Azure prompt</li>
+                    <li>• 🤔 Help me decide prompt</li>
+                </ul>
+
+                <p class="text-sm text-gray-500">Full prompts in <a href="https://github.com/srnichols/OpenBrain/blob/master/EASY-SETUP.md" class="text-brand-600 hover:underline">EASY-SETUP.md</a>. The repo also ships an <a href="https://github.com/srnichols/OpenBrain/blob/master/AGENTS.md" class="text-brand-600 hover:underline">AGENTS.md</a> so any AI agent helping a user follows the canonical install procedure.</p>
+            </section>
+
+            <section id="verify" class="mb-20">
+                <h2 class="text-2xl font-bold mb-4">✅ verify script — universal smoke test</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">A single script that confirms any Open Brain deployment is healthy. Captures a marker thought, semantically searches for it, then deletes it. Exit 0 = all good.</p>
+
+                <pre><code># Linux / macOS
+./scripts/verify.sh http://localhost:8000
+
+# Windows
+.\scripts\verify.ps1 http://localhost:8000
+
+# Hosted
+./scripts/verify.sh https://openbrain-&lt;handle&gt;.fly.dev</code></pre>
+
+                <p class="text-sm text-gray-500 mt-4">If anything fails, see <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/TROUBLESHOOTING.md" class="text-brand-600 hover:underline">docs/TROUBLESHOOTING.md</a> — a cross-cutting troubleshooting guide organized by symptom (API won't start, capture / embedder failures, search returns nothing, client config, Azure-specific, hosted-specific).</p>
+            </section>
+
+            <section id="first-hour" class="mb-20">
+                <h2 class="text-2xl font-bold mb-4">⏱️ Your first hour</h2>
+                <p class="text-gray-600 leading-relaxed mb-6">Server's running. Now what? <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/13-FIRST-HOUR.md" class="text-brand-600 hover:underline">13-FIRST-HOUR.md</a> walks through the first 60 minutes of actually using Open Brain:</p>
+
+                <ul class="space-y-2 text-sm text-gray-600 mb-4">
+                    <li>• <strong>Minutes 0–5</strong> — confirm it works with the verify script + a <code>thought_stats</code> probe</li>
+                    <li>• <strong>Minutes 5–20</strong> — your first 5 captures (small, varied, real)</li>
+                    <li>• <strong>Minutes 20–40</strong> — search the way you'd actually think; semantic recall in practice</li>
+                    <li>• <strong>Minutes 40–60</strong> — bake it into your real workflow (after-bug captures, project-start captures, cross-tool handoffs)</li>
+                </ul>
+
+                <p class="text-sm text-gray-500">The piece that turns "it's running" into "I'm using it."</p>
             </section>
 
             <!-- Roadmap -->
@@ -561,7 +792,7 @@ curl http://localhost:8080/health</code></pre>
                 <table>
                     <thead><tr><th>Method</th><th>Endpoint</th><th>Purpose</th></tr></thead>
                     <tbody>
-                        <tr><td><code>GET</code></td><td>/health</td><td>Health check &mdash; response includes <code>capabilities[]</code> (v0.7.0+: <code>"provenance"</code>)</td></tr>
+                        <tr><td><code>GET</code></td><td>/health</td><td>Health check &mdash; response includes <code>capabilities[]</code>. Presence of <code>"by-source"</code> signals provenance / Hallmark support (v0.7.0+)</td></tr>
                         <tr><td><code>POST</code></td><td>/memories</td><td>Capture a thought (validates <code>metadata.provenance</code> when present, v0.7.0+)</td></tr>
                         <tr><td><code>POST</code></td><td>/memories/search</td><td>Semantic search</td></tr>
                         <tr><td><code>POST</code></td><td>/memories/list</td><td>Filtered listing</td></tr>
@@ -621,6 +852,14 @@ curl http://localhost:8080/health</code></pre>
             <!-- Troubleshooting -->
             <section id="troubleshooting" class="mb-20">
                 <h2 class="text-2xl font-bold mb-4">Troubleshooting</h2>
+
+                <div class="p-4 rounded-lg border border-brand-100 bg-brand-50/30 text-sm mb-6">
+                    <strong>Start here:</strong> run <code>./scripts/verify.sh &lt;your-api-url&gt;</code> first — it pinpoints which layer is broken. Then jump to
+                    <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/TROUBLESHOOTING.md" class="text-brand-600 hover:underline">docs/TROUBLESHOOTING.md</a>
+                    for the full cross-cutting guide organized by symptom (API won't start, capture / embedder failures, search returns nothing, client config, Azure-specific, hosted-specific).
+                </div>
+
+                <h3 class="text-lg font-semibold mt-2 mb-3">Common gotchas</h3>
 
                 <div class="space-y-6">
                     <div class="p-4 rounded-lg border border-gray-100">

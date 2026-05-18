@@ -43,6 +43,7 @@
             <div class="hidden md:flex items-center gap-8 text-sm text-gray-600">
                 <a href="#features" class="hover:text-gray-900 transition">Features</a>
                 <a href="#how-it-works" class="hover:text-gray-900 transition">How It Works</a>
+                <a href="#plan-forge" class="hover:text-gray-900 transition">Plan&nbsp;Forge</a>
                 <a href="#deploy" class="hover:text-gray-900 transition">Deploy</a>
                 <a href="docs.html" class="hover:text-gray-900 transition">Docs</a>
                 <a href="https://github.com/srnichols/OpenBrain" class="hover:text-gray-900 transition flex items-center gap-1">
@@ -61,6 +62,7 @@
         <div id="mobile-menu" class="hidden md:hidden border-t border-gray-100 bg-white px-6 py-4 space-y-3 text-sm">
             <a href="#features" class="block text-gray-600 hover:text-gray-900">Features</a>
             <a href="#how-it-works" class="block text-gray-600 hover:text-gray-900">How It Works</a>
+            <a href="#plan-forge" class="block text-gray-600 hover:text-gray-900">Plan Forge</a>
             <a href="#deploy" class="block text-gray-600 hover:text-gray-900">Deploy</a>
             <a href="docs.html" class="block text-gray-600 hover:text-gray-900">Docs</a>
             <a href="https://github.com/srnichols/OpenBrain" class="block text-gray-600 hover:text-gray-900">GitHub</a>
@@ -112,7 +114,7 @@
                 <div class="text-sm text-gray-500 mt-1">AI Clients</div>
             </div>
             <div>
-                <div class="text-3xl font-bold text-gray-900">4</div>
+                <div class="text-3xl font-bold text-gray-900">5</div>
                 <div class="text-sm text-gray-500 mt-1">Deploy Options</div>
             </div>
             <div>
@@ -176,7 +178,45 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                     </div>
                     <h3 class="font-semibold mb-2">5-Minute Quickstart</h3>
-                    <p class="text-sm text-gray-500 leading-relaxed">Docker Compose gets you running in minutes. Or choose Supabase cloud, Azure managed, or Kubernetes for production.</p>
+                    <p class="text-sm text-gray-500 leading-relaxed">A Docker Desktop dev box gets you running on your laptop in minutes. Or pick cheap-hosted, on-prem K8s, or Azure managed when you're ready.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Plan Forge callout -->
+    <section id="plan-forge" class="py-20 px-6 border-y border-gray-100 bg-white">
+        <div class="max-w-6xl mx-auto">
+            <div class="grid md:grid-cols-5 gap-10 items-center">
+                <div class="md:col-span-2">
+                    <div class="inline-flex items-center gap-2 mb-3">
+                        <span class="text-xs font-semibold text-white bg-brand-600 px-2 py-0.5 rounded">Integration</span>
+                        <span class="text-xs text-gray-400 uppercase tracking-wider">v0.7.0+</span>
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-bold mb-3">Works great with <span class="text-brand-600">Plan&nbsp;Forge</span></h2>
+                    <p class="text-gray-500 leading-relaxed">
+                        If you use <a href="https://github.com/srnichols/plan-forge" class="text-brand-600 hover:underline">Plan Forge</a> for agentic project execution,
+                        Open Brain is the <strong>memory layer</strong>. Agents capture decisions, patterns and postmortems during a phase,
+                        then retrieve that context in future projects &mdash; nothing locked to a single tool, vendor or chat window.
+                    </p>
+                    <a href="docs.html#plan-forge" class="inline-flex items-center gap-1 mt-4 text-sm font-medium text-brand-600 hover:underline">
+                        How the two systems integrate
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                    </a>
+                </div>
+                <div class="md:col-span-3 grid sm:grid-cols-3 gap-4">
+                    <div class="p-4 rounded-lg bg-gray-50/70 border border-gray-100">
+                        <div class="text-xs font-semibold text-brand-600 uppercase tracking-wider mb-2">L3 memory layer</div>
+                        <p class="text-sm text-gray-600">Open Brain is the permanent, cross-project, semantic tier. Skills <code class="text-xs bg-white px-1 py-0.5 rounded">search</code> before acting, <code class="text-xs bg-white px-1 py-0.5 rounded">capture</code> after.</p>
+                    </div>
+                    <div class="p-4 rounded-lg bg-gray-50/70 border border-gray-100">
+                        <div class="text-xs font-semibold text-brand-600 uppercase tracking-wider mb-2">Hallmark provenance</div>
+                        <p class="text-sm text-gray-600">Every write carries a signed envelope: <code class="text-xs bg-white px-1 py-0.5 rounded">contentHash</code>, <code class="text-xs bg-white px-1 py-0.5 rounded">codeHash</code>, phase, tool. Indexed for exact-source lookup.</p>
+                    </div>
+                    <div class="p-4 rounded-lg bg-gray-50/70 border border-gray-100">
+                        <div class="text-xs font-semibold text-brand-600 uppercase tracking-wider mb-2">Offline-safe</div>
+                        <p class="text-sm text-gray-600">When Open Brain is unreachable, Plan Forge queues writes to <code class="text-xs bg-white px-1 py-0.5 rounded">.forge/openbrain-queue.jsonl</code> and drains them later. No thought lost.</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -282,37 +322,85 @@
         <div class="max-w-6xl mx-auto">
             <div class="text-center mb-16">
                 <h2 class="text-3xl font-bold mb-4">Deploy your way</h2>
-                <p class="text-gray-500 max-w-2xl mx-auto">From a 5-minute Docker quickstart to a full Kubernetes homelab setup.</p>
+                <p class="text-gray-500 max-w-2xl mx-auto">Five paths, same MCP tools and AI clients. Pick the one that matches how you want to use it.</p>
             </div>
-            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <!-- Docker -->
-                <div class="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Dev box -->
+                <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/11-DOCKER-DESKTOP-DEVBOX.md" class="block bg-white p-6 rounded-xl border border-brand-200 ring-1 ring-brand-100 hover:shadow-md transition">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="text-2xl">🖥️</div>
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-white bg-brand-600 px-2 py-0.5 rounded">Start here</span>
+                    </div>
+                    <h3 class="font-semibold mb-1">Docker Desktop dev box</h3>
+                    <p class="text-sm text-gray-500 mb-4">Win/Mac laptop, ~10 minutes, fully local &amp; private. Ollama on host, everything else in Docker.</p>
+                    <div class="text-xs text-brand-600 font-medium">$0 · Beginner</div>
+                </a>
+                <!-- Docker Compose (Linux) -->
+                <a href="https://github.com/srnichols/OpenBrain#quick-start-docker-compose" class="block bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
                     <div class="text-2xl mb-3">🐳</div>
-                    <h3 class="font-semibold mb-1">Docker Compose</h3>
-                    <p class="text-sm text-gray-500 mb-4">Up and running in 5 minutes. PostgreSQL + pgvector + Ollama + API in one command.</p>
-                    <div class="text-xs text-gray-400 font-mono bg-gray-50 p-2 rounded">docker compose up -d</div>
-                </div>
-                <!-- Supabase -->
-                <div class="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
-                    <div class="text-2xl mb-3">⚡</div>
-                    <h3 class="font-semibold mb-1">Supabase Cloud</h3>
-                    <p class="text-sm text-gray-500 mb-4">Managed PostgreSQL + Edge Functions. ~$0.10-$0.30/month on the free tier.</p>
-                    <div class="text-xs text-brand-600 font-medium">Serverless</div>
-                </div>
-                <!-- K8s -->
-                <div class="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
+                    <h3 class="font-semibold mb-1">Docker Compose (Linux)</h3>
+                    <p class="text-sm text-gray-500 mb-4">Headless server, NAS, Raspberry Pi, or VPS. Same compose stack, no Docker Desktop required.</p>
+                    <div class="text-xs text-gray-500 font-medium">$0–5 · Beginner</div>
+                </a>
+                <!-- Cheap hosted -->
+                <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/12-HOSTED-CHEAP.md" class="block bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
+                    <div class="text-2xl mb-3">☁️</div>
+                    <h3 class="font-semibold mb-1">Cheap hosted</h3>
+                    <p class="text-sm text-gray-500 mb-4">Always-on, accessible anywhere. Supabase or Neon for Postgres + Fly.io for the MCP server.</p>
+                    <div class="text-xs text-gray-500 font-medium">$0–5/mo · Beginner</div>
+                </a>
+                <!-- Kubernetes -->
+                <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/09-SELF-HOSTED-K8S.md" class="block bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
                     <div class="text-2xl mb-3">☸️</div>
                     <h3 class="font-semibold mb-1">Kubernetes</h3>
-                    <p class="text-sm text-gray-500 mb-4">Full homelab deployment with Tailscale, MetalLB, Ollama GPU, and monitoring.</p>
-                    <div class="text-xs text-brand-600 font-medium">$0/month add-on</div>
-                </div>
+                    <p class="text-sm text-gray-500 mb-4">Homelab / on-prem cluster, Tailscale Funnel, MetalLB, Ollama GPU, monitoring integration.</p>
+                    <div class="text-xs text-gray-500 font-medium">$0 own hw · Intermediate</div>
+                </a>
                 <!-- Azure -->
-                <div class="bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
-                    <div class="text-2xl mb-3">☁️</div>
-                    <h3 class="font-semibold mb-1">Azure Managed</h3>
-                    <p class="text-sm text-gray-500 mb-4">Azure Container Apps + Azure Database for PostgreSQL. Enterprise-ready.</p>
-                    <div class="text-xs text-brand-600 font-medium">Managed</div>
+                <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/10-AZURE-DEPLOYMENT.md" class="block bg-white p-6 rounded-xl border border-gray-100 hover:shadow-md transition">
+                    <div class="text-2xl mb-3">🚀</div>
+                    <h3 class="font-semibold mb-1">Azure (managed)</h3>
+                    <p class="text-sm text-gray-500 mb-4">One-command Bicep deploy: Container Apps + Azure PostgreSQL Flex + Azure OpenAI + Key Vault.</p>
+                    <div class="text-xs text-gray-500 font-medium">~$15–20/mo · Intermediate</div>
+                </a>
+                <!-- AWS/GCP note -->
+                <div class="bg-gray-50 p-6 rounded-xl border border-dashed border-gray-200 flex flex-col justify-center">
+                    <div class="text-2xl mb-3">🔀</div>
+                    <h3 class="font-semibold mb-1 text-gray-700">AWS &amp; GCP equivalents</h3>
+                    <p class="text-sm text-gray-500 mb-3">Open Brain is provider-agnostic. We ship Bicep for Azure; the same architecture maps to ECS / Cloud Run + RDS / Cloud SQL + Bedrock / Vertex AI.</p>
+                    <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/10-AZURE-DEPLOYMENT.md#equivalents-on-aws--gcp" class="text-xs text-brand-600 font-medium hover:underline">See the mapping table →</a>
                 </div>
+            </div>
+
+            <!-- Bootstrap helpers -->
+            <div class="mt-12 grid md:grid-cols-3 gap-4">
+                <a href="https://github.com/srnichols/OpenBrain/blob/master/EASY-SETUP.md" class="block bg-white p-4 rounded-lg border border-gray-100 hover:shadow-sm hover:border-brand-200 transition">
+                    <div class="flex items-start gap-3">
+                        <div class="text-lg shrink-0">🤖</div>
+                        <div>
+                            <h4 class="font-semibold text-sm mb-1">EASY-SETUP.md</h4>
+                            <p class="text-xs text-gray-500">Paste-into-your-AI prompts that install Open Brain for you. One prompt per path, plus a “help me decide” picker.</p>
+                        </div>
+                    </div>
+                </a>
+                <a href="https://github.com/srnichols/OpenBrain/tree/master/scripts" class="block bg-white p-4 rounded-lg border border-gray-100 hover:shadow-sm hover:border-brand-200 transition">
+                    <div class="flex items-start gap-3">
+                        <div class="text-lg shrink-0">✅</div>
+                        <div>
+                            <h4 class="font-semibold text-sm mb-1">verify.{ps1,sh}</h4>
+                            <p class="text-xs text-gray-500">60-second universal smoke test. Captures, searches, cleans up — works against any deployment URL.</p>
+                        </div>
+                    </div>
+                </a>
+                <a href="https://github.com/srnichols/OpenBrain/blob/master/docs/13-FIRST-HOUR.md" class="block bg-white p-4 rounded-lg border border-gray-100 hover:shadow-sm hover:border-brand-200 transition">
+                    <div class="flex items-start gap-3">
+                        <div class="text-lg shrink-0">⏱️</div>
+                        <div>
+                            <h4 class="font-semibold text-sm mb-1">Your First Hour</h4>
+                            <p class="text-xs text-gray-500">What to actually <em>do</em> once it’s running — first captures, search patterns, building the habit.</p>
+                        </div>
+                    </div>
+                </a>
             </div>
         </div>
     </section>
@@ -325,15 +413,15 @@
                 <p class="text-gray-500 max-w-2xl mx-auto">One memory backend, every AI client. Open Brain speaks MCP so your tools don't need to.</p>
             </div>
             <div class="flex flex-wrap justify-center gap-6 text-sm text-gray-600">
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">VS Code Copilot</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">Claude Desktop</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">Claude Code</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">Cursor</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">ChatGPT</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">Gemini</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">Grok</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">Windsurf</div>
-                <div class="px-5 py-3 rounded-lg border border-gray-100 bg-white">Any MCP Client</div>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">VS Code Copilot</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">Claude Desktop</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">Claude Code</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">Cursor</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">ChatGPT</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">Gemini</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">Grok</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">Windsurf</a>
+                <a href="docs.html#client-config" class="px-5 py-3 rounded-lg border border-gray-100 bg-white hover:border-brand-200 hover:shadow-sm transition">Any MCP Client</a>
             </div>
         </div>
     </section>

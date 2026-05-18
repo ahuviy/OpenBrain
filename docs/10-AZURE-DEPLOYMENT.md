@@ -184,6 +184,40 @@ npm run test:integration
 
 ---
 
+## Equivalents on AWS & GCP
+
+Open Brain itself has no Azure-specific code — the API just wants a PostgreSQL connection string and (optionally) an OpenAI-compatible embedding endpoint. We ship Bicep IaC for Azure because that's what the maintainer uses; the same architecture maps cleanly to AWS and GCP.
+
+| Concern | Azure (this guide) | AWS equivalent | GCP equivalent |
+|---------|-------------------|----------------|----------------|
+| Container runtime | Azure Container Apps | **ECS Fargate** or **App Runner** | **Cloud Run** |
+| Managed Postgres + pgvector | Azure PostgreSQL Flexible Server | **RDS for PostgreSQL** (pgvector extension since PG 15.2) or **Aurora PostgreSQL** | **Cloud SQL for PostgreSQL** (pgvector available) or **AlloyDB** |
+| Embeddings + LLM | Azure OpenAI (`text-embedding-3-small`, `gpt-4o-mini`) | **Amazon Bedrock** (Titan Embeddings v2, Claude Haiku) | **Vertex AI** (`text-embedding-005`, Gemini Flash) |
+| Secrets | Azure Key Vault | **AWS Secrets Manager** or **Parameter Store** | **Secret Manager** |
+| Logs | Log Analytics | **CloudWatch Logs** | **Cloud Logging** |
+| Container registry | Azure Container Registry (we use `ghcr.io`) | **ECR** | **Artifact Registry** |
+| One-command IaC | Bicep + `deploy.ps1` | Terraform / CDK / Copilot CLI (community PR welcome) | Terraform / `gcloud` (community PR welcome) |
+
+### Approximate cost parity
+
+| Provider | Roughly equivalent always-on cost |
+|----------|-----------------------------------|
+| Azure (this guide) | ~$15–20/mo |
+| AWS Fargate + RDS `db.t4g.micro` + Bedrock | ~$20–30/mo |
+| GCP Cloud Run + Cloud SQL `db-f1-micro` + Vertex AI | ~$15–25/mo |
+
+> **No AWS/GCP IaC yet?** [Open an issue](https://github.com/srnichols/OpenBrain/issues) or send a PR. The Azure Bicep in [`deploy/azure/main.bicep`](../deploy/azure/main.bicep) is small enough to translate in an afternoon — start with the resource list above. The application code is provider-agnostic, so it's purely an IaC contribution.
+
+### Hybrid setups also work
+
+You don't have to pick one cloud. Common mixes:
+
+- **AWS RDS Postgres + Azure Container Apps** — point `DATABASE_URL` at RDS, deploy the container to Azure (uses Azure OpenAI for embeddings).
+- **GCP Cloud SQL + Fly.io for the MCP server** — see [12-HOSTED-CHEAP.md](12-HOSTED-CHEAP.md).
+- **Self-hosted Postgres + Bedrock for embeddings** — set `EMBEDDER_PROVIDER=openrouter` with a Bedrock-compatible proxy, or wait for native Bedrock support.
+
+---
+
 ## Infrastructure Details
 
 ### Bicep Template

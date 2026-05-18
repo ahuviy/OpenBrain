@@ -88,7 +88,7 @@ flowchart LR
 - **REST API** — Direct HTTP access for scripts, webhooks, CI/CD integrations, and non-MCP tools. Every MCP tool has a REST equivalent.
 - **Multi-Developer Teams** — Optional `created_by` field lets 1-3 devs share one instance with per-user filtering.
 - **Project Scoping** — Isolate thoughts per project. Search within "ecommerce-api" without noise from "internal-tools".
-- **4 Deployment Options** — Docker Compose (free, 5 min), Azure (managed, ~$15/mo), Kubernetes (homelab), or Supabase (cloud).
+- **5 Deployment Options** — Docker Desktop dev box (free, ~10 min), Docker Compose Linux ($0–5), cheap hosted (Supabase + Fly, ~$0–5/mo), Kubernetes (homelab), or Azure (managed, ~$15–20/mo).
 - **Self-Hosted & Private** — Your data stays on your infrastructure. No vendor lock-in.
 - **27-Test Integration Suite** — Run `npm run test:integration` against any deployment to verify everything works.
 
@@ -96,14 +96,27 @@ flowchart LR
 
 ## Choose Your Deployment Path
 
-Open Brain supports four deployment options. Pick the one that matches your setup:
+Open Brain runs anywhere Postgres + Node can run. Pick the path that matches *how you want to use it*, not how big your wallet is — every option below works end-to-end with the same MCP tools and AI clients.
 
-| Path | Best For | Embeddings | Vector Dimensions | Guide |
-|------|----------|------------|-------------------|-------|
-| **Docker Compose** | Local dev, quickest start | Ollama (local, free) | 768 | [Quick Start](#quick-start-docker-compose) below |
-| **Azure** | Teams, production cloud, fully managed | Azure OpenAI | 1536 | [10-AZURE-DEPLOYMENT.md](docs/10-AZURE-DEPLOYMENT.md) |
-| **Kubernetes** | Homelab, production self-hosted | Ollama (local, free) | 768 | [09-SELF-HOSTED-K8S.md](docs/09-SELF-HOSTED-K8S.md) |
-| **Supabase Cloud** | Zero-infra, hosted | OpenRouter (cloud) | 1536 | [07-DEPLOYMENT.md](docs/07-DEPLOYMENT.md) |
+| Path | Best For | Time | Monthly Cost | Skill Level | Guide |
+|------|----------|------|--------------|-------------|-------|
+| **🖥️ Docker Desktop dev box** | Solo dev on a Win/Mac laptop, fully local & private | ~10 min | **$0** | Beginner | [11-DOCKER-DESKTOP-DEVBOX.md](docs/11-DOCKER-DESKTOP-DEVBOX.md) |
+| **🐳 Docker Compose (any Linux box)** | Headless server, NAS, Raspberry Pi, VPS | ~10 min | $0–5 | Beginner | [Quick Start](#quick-start-docker-compose) below |
+| **☁️ Cheap hosted (Supabase / Neon / Fly)** | Always-on, accessible anywhere, no hardware | ~30 min | **$0–5** | Beginner | [12-HOSTED-CHEAP.md](docs/12-HOSTED-CHEAP.md) |
+| **☸️ Kubernetes (homelab / on-prem)** | Homelab, on-prem cluster, multi-user privacy | ~1 hour | $0 (own hw) | Intermediate | [09-SELF-HOSTED-K8S.md](docs/09-SELF-HOSTED-K8S.md) |
+| **🚀 Azure (managed cloud)** | Teams, production, fully managed | ~20 min | ~$15–20 | Intermediate | [10-AZURE-DEPLOYMENT.md](docs/10-AZURE-DEPLOYMENT.md) |
+
+> **Using AWS or GCP instead?** Open Brain is provider-agnostic — only the Azure path ships ready-made IaC. See [10-AZURE-DEPLOYMENT.md → Equivalents on AWS & GCP](docs/10-AZURE-DEPLOYMENT.md#equivalents-on-aws--gcp) for a service-by-service mapping (Container Apps → ECS / Cloud Run, Azure PostgreSQL Flex → RDS / Cloud SQL, Azure OpenAI → Bedrock / Vertex AI). PRs welcome for AWS/GCP IaC.
+
+**Not sure?** If you have a laptop and want to *try it today*, start with the **Docker Desktop dev box** guide. If you want it reachable from every device with zero hardware, go **Cheap hosted**.
+
+### Bootstrap helpers (work with every path)
+
+- 🤖 **[EASY-SETUP.md](EASY-SETUP.md)** — paste-into-your-AI prompts that automate the install for each path (including a "help me decide" prompt that picks for you).
+- ✅ **[`scripts/verify.{ps1,sh}`](scripts/)** — 60-second smoke test you can point at any deployment URL. Captures a test thought, searches for it, cleans up. Use it to confirm a fresh install or to debug a sick one.
+- 🚑 **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** — cross-cutting fixes: embedder unreachable, dimension mismatch, multi-replica SSE drops, Supabase pooler quirks, etc.
+- ⏱️ **[docs/13-FIRST-HOUR.md](docs/13-FIRST-HOUR.md)** — what to actually *do* once it's running: first captures, search patterns, building the habit.
+- 🧠 **[AGENTS.md](AGENTS.md)** — drop this file in your fork so any AI agent helping a user follows the canonical install procedure (read automatically by Copilot, Claude Code, Cursor, Aider, Devin).
 
 > **Note on docs 02-08:** The numbered documentation (02-DATABASE-SCHEMA through 08-IMPLEMENTATION-ROADMAP) was originally written for the Supabase/OpenRouter path with 1536-dim vectors. The actual codebase and Docker/K8s deployment use 768-dim Ollama vectors. Both paths are fully functional — just match your `EMBEDDING_DIMENSIONS` env var to your embedder.
 
@@ -166,6 +179,18 @@ This starts:
 
 ### 4. Verify
 
+For a 60-second smoke test (works against any deployment URL):
+
+```bash
+# Linux / macOS
+./scripts/verify.sh http://localhost:8000
+
+# Windows
+.\scripts\verify.ps1 http://localhost:8000
+```
+
+Or do it by hand:
+
 ```bash
 # REST API health
 curl http://localhost:8000/health
@@ -175,11 +200,13 @@ curl http://localhost:8000/health
 curl http://localhost:8080/health
 # {"status":"healthy","service":"open-brain-mcp"}
 
-# Run integration tests (full CRUD verification)
+# Run the full 27-test integration suite
 OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
 ```
 
 The integration test suite runs 27 tests covering every endpoint — capture, batch, search, list, stats, update, delete — including `created_by` filtering, validation errors, and a full lifecycle test. All test data is auto-cleaned after the run.
+
+If anything fails, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). For what to do once it's working, see [docs/13-FIRST-HOUR.md](docs/13-FIRST-HOUR.md).
 
 ### 5. Connect an AI client
 

@@ -26,3 +26,8 @@ Thumbs.db
 # Data
 *.db
 *.sqlite3
+
+# Audit / reconcile scratch dumps
+openbrain-replay-counts.tsv
+tmp-*.sh
+

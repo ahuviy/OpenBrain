@@ -1,0 +1,42 @@
+# Open Brain on Render
+#
+# Deploys the Open Brain MCP + REST server as a Render Web Service.
+# Bring your own Postgres (Supabase, Neon, Render Postgres).
+#
+# Usage:
+#   1. Fork srnichols/OpenBrain on GitHub
+#   2. Render Dashboard → New → Blueprint → connect your fork
+#   3. Render reads this file and creates the service
+#   4. In the service settings, fill in the env vars marked `sync: false`
+#
+# See docs/12-HOSTED-CHEAP.md for the full walkthrough.
+
+services:
+  - type: web
+    name: openbrain
+    runtime: docker
+    plan: free                    # 512 MB RAM, sleeps after 15 min idle
+    dockerfilePath: ./Dockerfile
+    region: oregon                # change to one close to you and your DB
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: API_PORT
+        value: "8000"
+      - key: MCP_PORT
+        value: "8080"
+      - key: PORT                 # Render expects the service to listen on $PORT
+        value: "8080"             # we point Render at the MCP port
+      - key: LOG_LEVEL
+        value: info
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"
+      - key: EMBEDDER_PROVIDER
+        value: openrouter
+      # These must be set in the Render dashboard after the service is created.
+      - key: DATABASE_URL
+        sync: false
+      - key: MCP_ACCESS_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
