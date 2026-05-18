@@ -22,6 +22,13 @@ import {
   type BatchThoughtInput,
 } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
+import {
+  validateCaptureInput,
+  validateBatchInput,
+  CaptureValidationError,
+  logWarnings,
+  isStrictIngestEnabled,
+} from "./validation.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -45,68 +52,68 @@ export function createApi(): Hono {
 
   // ─── Health Check ────────────────────────────────────────────────
 
-  app.get("/health", (c) =>
-    c.json({
+  app.get("/health", (c) => {
+    const capabilities = [
+      "capture",
+      "search",
+      "list",
+      "batch",
+      "update",
+      "delete",
+      "stats",
+      "by-source",
+      "strict-validation",
+      "warning-channel",
+    ];
+    if (isStrictIngestEnabled()) capabilities.push("strict-ingest");
+    return c.json({
       status: "healthy",
       service: "open-brain-api",
-      capabilities: [
-        "capture",
-        "search",
-        "list",
-        "batch",
-        "update",
-        "delete",
-        "stats",
-        "by-source",
-      ],
-    })
-  );
+      capabilities,
+    });
+  });
 
   // ─── Capture Memory ──────────────────────────────────────────────
 
   app.post("/memories", async (c) => {
-    const body = await c.req.json<{
-      content: string;
-      source?: string;
-      project?: string;
-      created_by?: string;
-      supersedes?: string;
-    }>();
-
-    if (!body.content || body.content.trim().length === 0) {
-      return c.json({ error: "content is required" }, 400);
-    }
-
-    if (body.supersedes && !UUID_RE.test(body.supersedes)) {
-      return c.json({ error: "supersedes must be a valid UUID" }, 400);
-    }
-
-    if (body.source !== undefined && (typeof body.source !== "string" || body.source.trim().length === 0)) {
-      return c.json({ error: "source must be a non-empty string" }, 400);
-    }
-
-    if (body.project !== undefined && (typeof body.project !== "string" || body.project.trim().length === 0)) {
-      return c.json({ error: "project must be a non-empty string" }, 400);
+    let input;
+    try {
+      input = validateCaptureInput(await c.req.json(), { defaultSource: "api" });
+    } catch (err) {
+      if (err instanceof CaptureValidationError) {
+        return c.json({ error: err.message }, 400);
+      }
+      throw err;
     }
 
     try {
-      const [embedding, metadata] = await Promise.all([
-        embedder.generateEmbedding(body.content),
-        embedder.extractMetadata(body.content),
+      const [embedding, autoMetadata] = await Promise.all([
+        embedder.generateEmbedding(input.content),
+        embedder.extractMetadata(input.content),
       ]);
 
-      const fullMetadata = { ...metadata, source: body.source ?? "api" };
+      // Caller-supplied metadata wins over auto-extracted; both lose to `source` which
+      // is canonicalised at the top level so we can index on it.
+      const fullMetadata = { ...autoMetadata, ...input.metadata, source: input.source };
       const result = await insertThought(
-        pool, body.content, embedding, fullMetadata, body.project, body.supersedes, body.created_by
+        pool, input.content, embedding, fullMetadata, input.project, input.supersedes, input.created_by
       );
+
+      logWarnings(input.warnings, {
+        transport: "rest",
+        source: input.source,
+        project: input.project,
+        created_by: input.created_by,
+      });
 
       return c.json({
         id: result.id,
-        type: metadata.type,
-        topics: metadata.topics,
-        people: metadata.people,
+        type: (fullMetadata.type as string | undefined) ?? autoMetadata.type,
+        topics: (fullMetadata.topics as string[] | undefined) ?? autoMetadata.topics,
+        people: (fullMetadata.people as string[] | undefined) ?? autoMetadata.people,
         project: result.project,
         captured_at: result.created_at.toISOString(),
+        warnings: input.warnings,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -121,52 +128,65 @@ export function createApi(): Hono {
   // ─── Batch Capture ───────────────────────────────────────────────
 
   app.post("/memories/batch", async (c) => {
-    const body = await c.req.json<{
-      thoughts: Array<{ content: string }>;
-      project?: string;
-      created_by?: string;
-      source?: string;
-    }>();
-
-    if (!body.thoughts || !Array.isArray(body.thoughts) || body.thoughts.length === 0) {
-      return c.json({ error: "thoughts array is required and must not be empty" }, 400);
-    }
-
-    for (const t of body.thoughts) {
-      if (!t.content || t.content.trim().length === 0) {
-        return c.json({ error: "each thought must have non-empty content" }, 400);
+    let batch;
+    try {
+      batch = validateBatchInput(await c.req.json(), { defaultSource: "api" });
+    } catch (err) {
+      if (err instanceof CaptureValidationError) {
+        return c.json({ error: err.message }, 400);
       }
+      throw err;
     }
 
     try {
-      const source = body.source ?? "api";
-
       const processed: BatchThoughtInput[] = await Promise.all(
-        body.thoughts.map(async (t) => {
-          const [embedding, metadata] = await Promise.all([
-            embedder.generateEmbedding(t.content),
-            embedder.extractMetadata(t.content),
+        batch.items.map(async (item) => {
+          const [embedding, autoMetadata] = await Promise.all([
+            embedder.generateEmbedding(item.content),
+            embedder.extractMetadata(item.content),
           ]);
           return {
-            content: t.content,
+            content: item.content,
             embedding,
-            metadata: { ...metadata, source },
-            project: body.project,
-            created_by: body.created_by,
+            metadata: { ...autoMetadata, ...item.metadata, source: item.source },
+            project: item.project,
+            created_by: item.created_by,
           };
         })
       );
 
       const results = await batchInsertThoughts(pool, processed);
 
+      for (const w of batch.warnings) {
+        console.warn(
+          `[ingest-warning] ${JSON.stringify({
+            transport: "rest",
+            scope: "batch-envelope",
+            field: w.field,
+            reason: w.reason,
+            message: w.message,
+          })}`,
+        );
+      }
+      for (const item of batch.items) {
+        logWarnings(item.warnings, {
+          transport: "rest",
+          source: item.source,
+          project: item.project,
+          created_by: item.created_by,
+        });
+      }
+
       return c.json({
         count: results.length,
-        results: results.map((r) => ({
+        envelope_warnings: batch.warnings,
+        results: results.map((r, i) => ({
           id: r.id,
           content: r.content,
           metadata: r.metadata,
           project: r.project,
           captured_at: r.created_at.toISOString(),
+          warnings: batch.items[i]?.warnings ?? [],
         })),
       });
     } catch (err) {

@@ -26,6 +26,13 @@ import {
   type BatchThoughtInput,
 } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
+import {
+  validateCaptureInput,
+  validateBatchInput,
+  CaptureValidationError,
+  formatWarnings,
+  logWarnings,
+} from "../api/validation.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -330,48 +337,60 @@ export function createMcpServer(): Server {
 
         // ── capture_thought ──
         case "capture_thought": {
-          const content = args?.content as string;
-          const project = args?.project as string | undefined;
-          const source = (args?.source as string) ?? "mcp";
-          const supersedes = args?.supersedes as string | undefined;
-          const created_by = args?.created_by as string | undefined;
-
-          if (supersedes && !UUID_RE.test(supersedes)) {
-            return {
-              content: [{ type: "text" as const, text: "Error: supersedes must be a valid UUID" }],
-              isError: true,
-            };
+          let input;
+          try {
+            input = validateCaptureInput(args ?? {}, { defaultSource: "mcp" });
+          } catch (err) {
+            if (err instanceof CaptureValidationError) {
+              return {
+                content: [{ type: "text" as const, text: `Error: ${err.message}` }],
+                isError: true,
+              };
+            }
+            throw err;
           }
 
           // Generate embedding and extract metadata in parallel
-          const [embedding, metadata] = await Promise.all([
-            embedder.generateEmbedding(content),
-            embedder.extractMetadata(content),
+          const [embedding, autoMetadata] = await Promise.all([
+            embedder.generateEmbedding(input.content),
+            embedder.extractMetadata(input.content),
           ]);
 
-          const fullMetadata = { ...metadata, source };
-          const result = await insertThought(pool, content, embedding, fullMetadata, project, supersedes, created_by);
+          const fullMetadata = { ...autoMetadata, ...input.metadata, source: input.source };
+          const result = await insertThought(
+            pool, input.content, embedding, fullMetadata, input.project, input.supersedes, input.created_by
+          );
 
-          return {
-            content: [
+          logWarnings(input.warnings, {
+            transport: "mcp",
+            source: input.source,
+            project: input.project,
+            created_by: input.created_by,
+          });
+
+          const captureContent: { type: "text"; text: string }[] = [];
+          if (input.warnings.length > 0) {
+            captureContent.push({ type: "text" as const, text: formatWarnings(input.warnings) });
+          }
+          captureContent.push({
+            type: "text" as const,
+            text: JSON.stringify(
               {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    status: "captured",
-                    id: result.id,
-                    type: metadata.type,
-                    topics: metadata.topics,
-                    people: metadata.people,
-                    action_items: metadata.action_items,
-                    captured_at: result.created_at.toISOString(),
-                  },
-                  null,
-                  2
-                ),
+                status: "captured",
+                id: result.id,
+                type: (fullMetadata.type as string | undefined) ?? autoMetadata.type,
+                topics: (fullMetadata.topics as string[] | undefined) ?? autoMetadata.topics,
+                people: (fullMetadata.people as string[] | undefined) ?? autoMetadata.people,
+                action_items: autoMetadata.action_items,
+                captured_at: result.created_at.toISOString(),
+                warnings: input.warnings,
               },
-            ],
-          };
+              null,
+              2
+            ),
+          });
+
+          return { content: captureContent };
         }
 
         // ── thought_stats ──
@@ -455,45 +474,94 @@ export function createMcpServer(): Server {
 
         // ── capture_thoughts (batch) ──
         case "capture_thoughts": {
-          const thoughtInputs = args?.thoughts as Array<{ content: string }>;
-          const project = args?.project as string | undefined;
-          const source = (args?.source as string) ?? "mcp";
-          const created_by = args?.created_by as string | undefined;
+          let batch;
+          try {
+            batch = validateBatchInput(args ?? {}, { defaultSource: "mcp" });
+          } catch (err) {
+            if (err instanceof CaptureValidationError) {
+              return {
+                content: [{ type: "text" as const, text: `Error: ${err.message}` }],
+                isError: true,
+              };
+            }
+            throw err;
+          }
 
-          // Process each thought: embed + extract metadata
+          // Process each item: embed + extract metadata + merge with caller metadata
           const processed: BatchThoughtInput[] = await Promise.all(
-            thoughtInputs.map(async (t) => {
-              const [embedding, metadata] = await Promise.all([
-                embedder.generateEmbedding(t.content),
-                embedder.extractMetadata(t.content),
+            batch.items.map(async (item) => {
+              const [embedding, autoMetadata] = await Promise.all([
+                embedder.generateEmbedding(item.content),
+                embedder.extractMetadata(item.content),
               ]);
               return {
-                content: t.content,
+                content: item.content,
                 embedding,
-                metadata: { ...metadata, source },
-                project,
-                created_by,
+                metadata: { ...autoMetadata, ...item.metadata, source: item.source },
+                project: item.project,
+                created_by: item.created_by,
               };
             })
           );
 
           const results = await batchInsertThoughts(pool, processed);
 
-          const formatted = results.map((r) => ({
+          for (const w of batch.warnings) {
+            console.warn(
+              `[ingest-warning] ${JSON.stringify({
+                transport: "mcp",
+                scope: "batch-envelope",
+                field: w.field,
+                reason: w.reason,
+                message: w.message,
+              })}`,
+            );
+          }
+          for (const item of batch.items) {
+            logWarnings(item.warnings, {
+              transport: "mcp",
+              source: item.source,
+              project: item.project,
+              created_by: item.created_by,
+            });
+          }
+
+          const formatted = results.map((r, i) => ({
             id: r.id,
             content: r.content,
             metadata: r.metadata,
             captured_at: r.created_at.toISOString(),
+            warnings: batch.items[i]?.warnings ?? [],
           }));
 
-          return {
-            content: [
+          const totalItemWarnings = formatted.reduce((n, f) => n + f.warnings.length, 0);
+          const batchContent: { type: "text"; text: string }[] = [];
+          if (batch.warnings.length > 0 || totalItemWarnings > 0) {
+            const lines: string[] = [];
+            if (batch.warnings.length > 0) {
+              lines.push(formatWarnings(batch.warnings).replace(/^\u26a0\ufe0f.*\n/, "\u26a0\ufe0f Batch envelope:\n"));
+            }
+            formatted.forEach((f, i) => {
+              if (f.warnings.length > 0) {
+                lines.push(`\u26a0\ufe0f thoughts[${i}]:\n${formatWarnings(f.warnings).split("\n").slice(1).join("\n")}`);
+              }
+            });
+            batchContent.push({ type: "text" as const, text: lines.join("\n\n") });
+          }
+          batchContent.push({
+            type: "text" as const,
+            text: JSON.stringify(
               {
-                type: "text" as const,
-                text: JSON.stringify({ count: formatted.length, results: formatted }, null, 2),
+                count: formatted.length,
+                envelope_warnings: batch.warnings,
+                results: formatted,
               },
-            ],
-          };
+              null,
+              2
+            ),
+          });
+
+          return { content: batchContent };
         }
 
         default:
