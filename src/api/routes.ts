@@ -9,6 +9,7 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 
 import { getPool } from "../db/connection.js";
+import { notifyFailure } from "../notify.js";
 import {
   insertThought,
   searchThoughts,
@@ -44,6 +45,7 @@ export function createApi(): Hono {
   // Global error handler — return structured JSON for all errors
   app.onError((err, c) => {
     console.error("[api] Unhandled error:", err.message);
+    notifyFailure("⚠️ Open Brain DOWN", `REST error: ${err.message}`);
     return c.json(
       { error: err.message, service: "open-brain-api" },
       500

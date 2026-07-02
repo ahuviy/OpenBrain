@@ -17,6 +17,7 @@ import http from "node:http";
 import { serve } from "@hono/node-server";
 
 import { initializeDatabase, closePool, getPool } from "./db/connection.js";
+import { notifyFailure } from "./notify.js";
 import { createApi } from "./api/routes.js";
 import { createMcpServer } from "./mcp/server.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -107,6 +108,14 @@ async function main(): Promise<void> {
       }
 
       const healthy = Object.values(checks).every((v) => !v.startsWith("error"));
+      if (!healthy) {
+        notifyFailure(
+          "⚠️ Open Brain DOWN",
+          Object.entries(checks)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("\n")
+        );
+      }
       res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({

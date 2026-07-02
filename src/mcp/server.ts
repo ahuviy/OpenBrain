@@ -14,6 +14,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { getPool } from "../db/connection.js";
+import { notifyFailure } from "../notify.js";
 import {
   insertThought,
   searchThoughts,
@@ -573,8 +574,11 @@ export function createMcpServer(): Server {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[mcp] Tool "${name}" failed:`, message);
+      notifyFailure("⚠️ Open Brain DOWN", `Tool "${name}" failed: ${message}`);
       return {
-        content: [{ type: "text" as const, text: `Error: ${message}` }],
+        content: [
+          { type: "text" as const, text: `❌ OPEN BRAIN DOWN — ${message}` },
+        ],
         isError: true,
       };
     }
