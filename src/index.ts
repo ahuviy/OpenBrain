@@ -16,7 +16,7 @@
 import http from "node:http";
 import { serve } from "@hono/node-server";
 
-import { initializeDatabase, closePool } from "./db/connection.js";
+import { initializeDatabase, closePool, getPool } from "./db/connection.js";
 import { createApi } from "./api/routes.js";
 import { createMcpServer } from "./mcp/server.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
@@ -69,10 +69,52 @@ async function main(): Promise<void> {
 
     const url = new URL(req.url ?? "/", `http://localhost:${mcpPort}`);
 
-    // Health check — no auth required
+    // Health check — no auth required.
+    // Shallow by default so Fly's frequent liveness probe stays cheap;
+    // ?deep=1 additionally probes DB + OpenRouter for external uptime monitoring.
     if (url.pathname === "/health") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "healthy", service: "open-brain-mcp" }));
+      if (url.searchParams.get("deep") === null) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "healthy", service: "open-brain-mcp" }));
+        return;
+      }
+
+      const checks: Record<string, string> = {};
+
+      try {
+        await getPool().query("SELECT 1");
+        checks.db = "ok";
+      } catch (err) {
+        checks.db = err instanceof Error ? `error: ${err.message}` : "error";
+      }
+
+      try {
+        const orRes = await fetch("https://openrouter.ai/api/v1/credits", {
+          headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}` },
+          signal: AbortSignal.timeout(4000),
+        });
+        const orJson = (await orRes.json()) as {
+          data?: { total_credits?: number; total_usage?: number };
+        };
+        const remaining =
+          (orJson.data?.total_credits ?? 0) - (orJson.data?.total_usage ?? 0);
+        if (!orRes.ok) checks.openrouter = `error: http ${orRes.status}`;
+        else if (remaining <= 0) checks.openrouter = "error: no credit remaining";
+        else if (remaining < 1) checks.openrouter = `low: $${remaining.toFixed(2)} remaining`;
+        else checks.openrouter = `ok: $${remaining.toFixed(2)} remaining`;
+      } catch (err) {
+        checks.openrouter = err instanceof Error ? `error: ${err.message}` : "error";
+      }
+
+      const healthy = Object.values(checks).every((v) => !v.startsWith("error"));
+      res.writeHead(healthy ? 200 : 503, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          status: healthy ? "healthy" : "unhealthy",
+          service: "open-brain-mcp",
+          checks,
+        })
+      );
       return;
     }
 
