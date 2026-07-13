@@ -1108,7 +1108,7 @@ These features do not exist in Nate's original and were built for active softwar
 | **Decision linking** | `supersedes` param — links new decisions to the ones they replace | AI agents see the evolution of decisions, not just the latest |
 | **Thought archival** | `archived` column — soft-archive old thoughts | Long-running projects need search cleanup without data loss |
 | **13 thought types** | Added: `architecture`, `pattern`, `postmortem`, `requirement`, `bug`, `convention` | Development concepts that don't map to the original 7 personal types |
-| **Test suite** | 39 unit tests (Vitest) across DB, MCP, and REST layers | Production system needs automated quality gates |
+| **Test suite** | 100+ unit tests (Vitest) across DB, MCP, REST, and OAuth layers, plus in-process HTTP integration tests | Production system needs automated quality gates |
 | **CI/CD** | GitHub Actions — build, typecheck, test, Docker push to GHCR | Automated on every push and PR |
 
 ### MCP Tools: 4 → 7

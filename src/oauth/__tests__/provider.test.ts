@@ -374,10 +374,32 @@ describe("OpenBrainOAuthProvider", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("pruneExpired keeps live tokens", async () => {
-    await store.insertToken({ token: "live", kind: "access", clientId: "c", audience: RESOURCE, expiresAt: new Date(clock.getTime() + 3_600_000) });
+  it("pruneExpired physically removes expired tokens and codes but keeps live ones", async () => {
+    const past = new Date(clock.getTime() - 1000);
+    const future = new Date(clock.getTime() + 3_600_000);
+    await store.insertToken({ token: "old", kind: "access", clientId: "c", audience: RESOURCE, expiresAt: past });
+    await store.insertToken({ token: "live", kind: "access", clientId: "c", audience: RESOURCE, expiresAt: future });
+    await store.insertCode({ code: "oldcode", clientId: "c", redirectUri: CLAUDE_REDIRECT, codeChallenge: CODE_CHALLENGE, resource: RESOURCE, expiresAt: past });
+    expect(store.totalRows().tokens).toBe(2);
+    expect(store.totalRows().codes).toBe(1);
     await provider.pruneExpired();
+    expect(store.totalRows().tokens).toBe(1);
+    expect(store.totalRows().codes).toBe(0);
     expect(await store.getActiveToken("live", "access")).toBeDefined();
+  });
+
+  it("handleLogin returns 500 when the store throws", async () => {
+    const throwingStore = new InMemoryOAuthStore(() => clock);
+    throwingStore.getClient = async () => {
+      throw new Error("db down");
+    };
+    const p = new OpenBrainOAuthProvider(throwingStore, { issuer: ISSUER, resource: RESOURCE, ownerKey: OWNER, now: () => clock });
+    const res = new FakeResponse();
+    await p.handleLogin(
+      { password: OWNER, client_id: "any", redirect_uri: CLAUDE_REDIRECT, code_challenge: CODE_CHALLENGE, resource: RESOURCE },
+      asRes(res)
+    );
+    expect(res.statusCode).toBe(500);
   });
 
   it("escapeHtml neutralizes HTML metacharacters", () => {

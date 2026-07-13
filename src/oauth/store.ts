@@ -285,6 +285,11 @@ export class InMemoryOAuthStore implements OAuthStore {
     for (const [k, v] of this.codes) if (v.expiresAt <= now) this.codes.delete(k);
     for (const [k, v] of this.tokens) if (v.expiresAt <= now) this.tokens.delete(k);
   }
+
+  /** Test-only: physical row counts, so tests can assert pruning actually deletes. */
+  totalRows(): { clients: number; codes: number; tokens: number } {
+    return { clients: this.clients.size, codes: this.codes.size, tokens: this.tokens.size };
+  }
 }
 
 function stripCode(row: AuthCodeRow & { consumed: boolean }): AuthCodeRow {
