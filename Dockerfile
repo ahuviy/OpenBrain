@@ -25,6 +25,10 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 COPY config/ ./config/
 
+# Knex migrations (run in-container via `npm run db:migrate`)
+COPY knexfile.cjs ./
+COPY db/knex-migrations ./db/knex-migrations
+
 # Run as non-root for security
 RUN addgroup -S openbrain && adduser -S openbrain -G openbrain
 USER openbrain

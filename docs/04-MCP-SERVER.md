@@ -319,6 +319,30 @@ Add to `claude_desktop_config.json`:
 
 > **Requires**: Node.js installed. `mcp-remote` is fetched automatically by `npx`.
 
+#### Claude.ai (web + mobile) — OAuth connector
+
+The claude.ai native connector authenticates with **OAuth 2.1** (not a URL key) and works in the
+browser and the **mobile app** (connectors are account-scoped and sync across surfaces).
+
+The server is a self-contained OAuth authorization + resource server (RFC 6749 / 7591 DCR / 7636
+PKCE / 8707 audience binding), so no third-party identity provider is needed. It requires a **public
+HTTPS** origin — mobile is off your tailnet, so use a Tailscale Funnel or Fly.io URL.
+
+1. Deploy with `PUBLIC_BASE_URL` set to the public origin (no trailing slash) and `MCP_ACCESS_KEY`
+   set. Apply the OAuth tables with `npm run db:migrate` (knex migration `004_oauth`; in the hosted
+   Fly deployment, `fly ssh console -a <app> -C "npm run db:migrate"`). This exposes
+   `PUBLIC_BASE_URL/mcp` (Streamable HTTP) behind OAuth; discovery metadata is served at
+   `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server`.
+2. claude.ai → **Settings → Connectors → Add custom connector** → URL `https://<host>/mcp`.
+3. Leave OAuth Client ID/Secret blank (Dynamic Client Registration is supported).
+4. Click **Connect** → on the consent screen, enter your `MCP_ACCESS_KEY` as the access key.
+
+**Verify:** *"Use the thought_stats tool to show my brain statistics."* Then repeat in the Claude
+mobile app (same account, enable the connector from the chat **+** menu).
+
+> If `PUBLIC_BASE_URL` is unset, OAuth and `/mcp` are disabled and only the legacy `/sse` (key) path
+> is served. The `/sse` path stays available regardless, for Desktop / Claude Code / ChatGPT.
+
 #### Claude Code / VS Code Copilot
 
 Add to `~/.claude/settings.json`:

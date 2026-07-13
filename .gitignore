@@ -3,6 +3,8 @@ k8s/openbrain-secrets-actual.yaml
 deploy/on-prem/k8s/openbrain-secrets-actual.yaml
 .env
 .mcp-key.txt
+SECRETS.local.md
+*.local.md
 
 # Node / TypeScript
 node_modules/

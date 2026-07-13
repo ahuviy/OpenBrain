@@ -26,25 +26,32 @@
     "lint": "eslint src/",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "knex migrate:latest --knexfile knexfile.cjs",
+    "db:rollback": "knex migrate:rollback --knexfile knexfile.cjs",
+    "db:migrate:status": "knex migrate:list --knexfile knexfile.cjs"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
-    "@modelcontextprotocol/sdk": "^1.3.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.0",
     "hono": "^4.7.0",
+    "knex": "^3.3.0",
     "pg": "^8.13.1",
     "pgvector": "^0.2.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.13.0",
     "@types/pg": "^8.11.11",
+    "pforge-sdk": "file:../Plan-Forge/pforge-sdk",
     "tsx": "^4.19.0",
     "typescript": "^5.7.3",
-    "vitest": "^4.1.1",
-    "pforge-sdk": "file:../Plan-Forge/pforge-sdk"
+    "vitest": "^4.1.1"
   }
 }

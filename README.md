@@ -622,6 +622,37 @@ Add to `claude_desktop_config.json`:
 
 > If your server is behind HTTPS (e.g., Tailscale Funnel), use the `https://` URL instead.
 
+### Claude.ai (web + mobile) — OAuth connector
+
+The claude.ai native connector works in the browser **and the mobile app** (connectors bind to your
+account and sync across surfaces). Unlike the desktop bridge, it authenticates with OAuth 2.1
+instead of a URL key, so no `mcp-remote` and no Node.js on the client.
+
+**Prerequisites on the server:**
+
+- A **public HTTPS** origin — mobile is off your tailnet, so a LAN/tailnet URL will not work. Use a
+  Tailscale Funnel or Fly.io URL.
+- Set `PUBLIC_BASE_URL` to that exact origin (no trailing slash) and keep `MCP_ACCESS_KEY` set. This
+  enables the Streamable HTTP endpoint at `PUBLIC_BASE_URL/mcp` behind OAuth.
+- Apply the OAuth tables with `npm run db:migrate` (knex; migration `004_oauth`). In the hosted Fly
+  deployment run it in-container: `fly ssh console -a <app> -C "npm run db:migrate"`.
+
+**Add the connector:**
+
+1. claude.ai → **Settings → Connectors → Add custom connector**.
+2. URL: `https://<your-host>/mcp` (the Streamable HTTP endpoint — note `/mcp`, not `/sse`).
+3. Leave OAuth Client ID / Secret blank — the server supports Dynamic Client Registration.
+4. Save, then click **Connect**. A consent screen appears — enter your `MCP_ACCESS_KEY` as the
+   access key. Claude stores the resulting token and refreshes it automatically.
+
+**Mobile:** open the Claude mobile app (same account), start a chat, enable the `openbrain`
+connector from the **+** menu.
+
+**Verify:** *"Use the thought_stats tool to show brain statistics."*
+
+> Free, Pro, and Max plans can all add one or more custom connectors. The `/sse` + key endpoints
+> above remain available for Desktop / Claude Code / ChatGPT; they are unaffected.
+
 ### Cursor
 
 Add to `.cursor/mcp.json` in your project:
