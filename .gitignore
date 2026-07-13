@@ -33,3 +33,6 @@ Thumbs.db
 openbrain-replay-counts.tsv
 tmp-*.sh
 
+
+# Code review workspace
+.reviews/

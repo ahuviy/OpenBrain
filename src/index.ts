@@ -61,6 +61,14 @@ async function main(): Promise<void> {
   });
 }
 
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason instanceof Error ? reason.stack : reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException]", err.stack ?? err.message);
+});
+
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("\n[shutdown] Received SIGINT, closing...");

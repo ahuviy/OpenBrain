@@ -3,7 +3,7 @@ import type { Response } from "express";
 import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 import { InMemoryOAuthStore } from "../store.js";
-import { OpenBrainOAuthProvider } from "../provider.js";
+import { OpenBrainOAuthProvider, __testing } from "../provider.js";
 
 const ISSUER = "https://brain.example.com";
 const RESOURCE = "https://brain.example.com/mcp";
@@ -290,5 +290,104 @@ describe("OpenBrainOAuthProvider", () => {
     const tokens = await provider.exchangeAuthorizationCode(client, code, undefined, CLAUDE_REDIRECT, new URL(RESOURCE));
     await provider.revokeToken(client, { token: tokens.access_token });
     await expect(provider.verifyAccessToken(tokens.access_token)).rejects.toThrow();
+  });
+
+  it("verifyAccessToken rejects a live token whose audience is not the server resource", async () => {
+    await store.insertToken({
+      token: "wrong-aud",
+      kind: "access",
+      clientId: "c1",
+      audience: "https://evil.example.com/mcp",
+      expiresAt: new Date(clock.getTime() + 3_600_000),
+    });
+    await expect(provider.verifyAccessToken("wrong-aud")).rejects.toThrow();
+  });
+
+  it("challengeForAuthorizationCode rejects a code issued to a different client", async () => {
+    const a = await registerClaude();
+    const b = await registerClaude();
+    const clientB = await getClient(b.client_id);
+    const codeA = await issueCode(a.client_id);
+    await expect(provider.challengeForAuthorizationCode(clientB, codeA)).rejects.toThrow();
+  });
+
+  it("exchangeAuthorizationCode rejects a code issued to a different client", async () => {
+    const a = await registerClaude();
+    const b = await registerClaude();
+    const clientB = await getClient(b.client_id);
+    const codeA = await issueCode(a.client_id);
+    await expect(
+      provider.exchangeAuthorizationCode(clientB, codeA, undefined, CLAUDE_REDIRECT, new URL(RESOURCE))
+    ).rejects.toThrow();
+  });
+
+  it("exchangeRefreshToken rejects a refresh token issued to a different client", async () => {
+    const a = await registerClaude();
+    const b = await registerClaude();
+    const clientA = await getClient(a.client_id);
+    const clientB = await getClient(b.client_id);
+    const codeA = await issueCode(a.client_id);
+    const t = await provider.exchangeAuthorizationCode(clientA, codeA, undefined, CLAUDE_REDIRECT, new URL(RESOURCE));
+    await expect(
+      provider.exchangeRefreshToken(clientB, t.refresh_token ?? "", undefined, new URL(RESOURCE))
+    ).rejects.toThrow();
+  });
+
+  it("refresh rotation revokes the sibling access token", async () => {
+    const info = await registerClaude();
+    const client = await getClient(info.client_id);
+    const code = await issueCode(info.client_id);
+    const first = await provider.exchangeAuthorizationCode(client, code, undefined, CLAUDE_REDIRECT, new URL(RESOURCE));
+    await expect(provider.verifyAccessToken(first.access_token)).resolves.toBeDefined();
+    await provider.exchangeRefreshToken(client, first.refresh_token ?? "", undefined, new URL(RESOURCE));
+    await expect(provider.verifyAccessToken(first.access_token)).rejects.toThrow();
+  });
+
+  it("handleLogin rejects an unknown client_id with 400", async () => {
+    const res = new FakeResponse();
+    await provider.handleLogin(
+      { password: OWNER, client_id: "does-not-exist", redirect_uri: CLAUDE_REDIRECT, code_challenge: CODE_CHALLENGE, resource: RESOURCE },
+      asRes(res)
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("handleLogin rejects a resource that is not the server resource with 400", async () => {
+    const info = await registerClaude();
+    const res = new FakeResponse();
+    await provider.handleLogin(
+      { password: OWNER, client_id: info.client_id, redirect_uri: CLAUDE_REDIRECT, code_challenge: CODE_CHALLENGE, resource: "https://evil.example.com/mcp" },
+      asRes(res)
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.redirectedTo).toBe("");
+  });
+
+  it("handleLogin rejects a same-length wrong key via the timing-safe path with 401", async () => {
+    const info = await registerClaude();
+    const res = new FakeResponse();
+    const sameLengthWrong = "x".repeat(OWNER.length);
+    await provider.handleLogin(
+      { password: sameLengthWrong, client_id: info.client_id, redirect_uri: CLAUDE_REDIRECT, code_challenge: CODE_CHALLENGE, resource: RESOURCE },
+      asRes(res)
+    );
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("pruneExpired keeps live tokens", async () => {
+    await store.insertToken({ token: "live", kind: "access", clientId: "c", audience: RESOURCE, expiresAt: new Date(clock.getTime() + 3_600_000) });
+    await provider.pruneExpired();
+    expect(await store.getActiveToken("live", "access")).toBeDefined();
+  });
+
+  it("escapeHtml neutralizes HTML metacharacters", () => {
+    expect(__testing.escapeHtml(`<script>"&'`)).toBe("&lt;script&gt;&quot;&amp;&#39;");
+  });
+
+  it("isSafeRedirectUri accepts https + loopback http, rejects others and malformed", () => {
+    expect(__testing.isSafeRedirectUri("https://claude.ai/cb")).toBe(true);
+    expect(__testing.isSafeRedirectUri("http://localhost:5000/cb")).toBe(true);
+    expect(__testing.isSafeRedirectUri("http://evil.com/cb")).toBe(false);
+    expect(__testing.isSafeRedirectUri("not a url")).toBe(false);
   });
 });

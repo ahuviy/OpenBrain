@@ -71,6 +71,7 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
   private readonly accessTtl: number;
   private readonly refreshTtl: number;
   private readonly now: () => Date;
+  private readonly resource: string;
 
   constructor(
     private readonly store: OAuthStore,
@@ -79,6 +80,7 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
     this.accessTtl = config.accessTtlSeconds ?? ACCESS_TTL_SECONDS;
     this.refreshTtl = config.refreshTtlSeconds ?? REFRESH_TTL_SECONDS;
     this.now = config.now ?? (() => new Date());
+    this.resource = new URL(config.resource).href;
   }
 
   get clientsStore(): OAuthRegisteredClientsStore {
@@ -119,7 +121,7 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
     params: AuthorizationParams,
     res: Response
   ): Promise<void> {
-    const resource = params.resource?.href ?? this.config.resource;
+    const resource = params.resource?.href ?? this.resource;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     res.status(200).send(
@@ -141,6 +143,15 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
    * the SDK provider interface — mounted directly as POST /oauth/login.
    */
   async handleLogin(fields: LoginFields, res: Response): Promise<void> {
+    try {
+      await this.completeLogin(fields, res);
+    } catch (err) {
+      console.error("[oauth] login error:", err instanceof Error ? err.message : err);
+      if (!res.headersSent) res.status(500).send(renderError("Internal error."));
+    }
+  }
+
+  private async completeLogin(fields: LoginFields, res: Response): Promise<void> {
     const clientId = fields.client_id ?? "";
     const client = await this.store.getClient(clientId);
 
@@ -152,6 +163,10 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
       res.status(400).send(renderError("Unregistered redirect_uri."));
       return;
     }
+    if (fields.resource !== undefined && fields.resource !== this.resource) {
+      res.status(400).send(renderError("Invalid resource."));
+      return;
+    }
     if (!this.checkOwnerKey(fields.password ?? "")) {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.status(401).send(
@@ -160,7 +175,7 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
           client_name: client.clientName,
           redirect_uri: fields.redirect_uri,
           code_challenge: fields.code_challenge,
-          resource: fields.resource ?? this.config.resource,
+          resource: fields.resource ?? this.resource,
           state: fields.state,
           scope: fields.scope,
           error: "Incorrect key. Try again.",
@@ -175,7 +190,7 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
       clientId,
       redirectUri: fields.redirect_uri,
       codeChallenge: fields.code_challenge,
-      resource: fields.resource ?? this.config.resource,
+      resource: fields.resource ?? this.resource,
       scope: fields.scope,
       expiresAt: this.expiry(CODE_TTL_SECONDS),
     });
@@ -231,6 +246,7 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
       throw new InvalidTargetError("resource does not match refresh token");
     }
     await this.store.revokeToken(refreshToken);
+    if (row.refreshParent) await this.store.revokeToken(row.refreshParent);
     const scope = scopes?.join(" ") ?? row.scope;
     return this.issueTokens(client.client_id, row.audience, scope);
   }
@@ -240,7 +256,7 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
     if (!row) {
       throw new InvalidTokenError("Invalid or expired access token");
     }
-    if (row.audience !== this.config.resource) {
+    if (row.audience !== this.resource) {
       throw new InvalidTokenError("Token audience mismatch");
     }
     return {
@@ -257,6 +273,10 @@ export class OpenBrainOAuthProvider implements OAuthServerProvider {
     request: OAuthTokenRevocationRequest
   ): Promise<void> {
     await this.store.revokeToken(request.token);
+  }
+
+  async pruneExpired(): Promise<void> {
+    await this.store.deleteExpired();
   }
 
   private async issueTokens(

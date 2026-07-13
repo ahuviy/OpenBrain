@@ -13,6 +13,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 
 import { getPool } from "../db/connection.js";
 import { notifyFailure } from "../notify.js";
@@ -151,25 +152,46 @@ function registerOAuth(app: express.Express, options: McpAppOptions): void {
       })
     );
 
+    const loginRateLimit = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 15,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: "too_many_requests" },
+    });
+
     app.post(
       "/oauth/login",
+      loginRateLimit,
       express.urlencoded({ extended: false }),
-      (req, res) => {
-        void provider.handleLogin(req.body, res);
+      async (req, res) => {
+        await provider.handleLogin(req.body, res);
       }
     );
 
     const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(new URL(resource));
     const bearer = requireBearerAuth({ verifier: provider, resourceMetadataUrl });
 
-    app.post("/mcp", bearer, (req, res) => {
-      void handleStreamableRequest(
-        req as IncomingMessage & { auth?: AuthInfo },
-        res as unknown as ServerResponse
-      );
+    app.post("/mcp", bearer, async (req, res) => {
+      try {
+        await handleStreamableRequest(
+          req as IncomingMessage & { auth?: AuthInfo },
+          res as unknown as ServerResponse
+        );
+      } catch (err) {
+        console.error("[mcp] request error:", err instanceof Error ? err.message : err);
+        if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+      }
     });
     app.get("/mcp", (_req, res) => res.status(405).json({ error: "method_not_allowed" }));
     app.delete("/mcp", (_req, res) => res.status(405).json({ error: "method_not_allowed" }));
+
+    const pruneTimer = setInterval(() => {
+      provider.pruneExpired().catch((err) =>
+        console.error("[oauth] prune error:", err instanceof Error ? err.message : err)
+      );
+    }, 60 * 60 * 1000);
+    pruneTimer.unref();
 
     console.log(`[mcp] OAuth + Streamable HTTP enabled — resource ${resource}`);
   } catch (err) {
