@@ -82,14 +82,44 @@ Server→ntfy→phone is the only app-independent way to get a *loud* phone aler
 
 ## Deploy / update
 
+**Normal path: push to `master`.** The `CI` workflow type-checks, builds and tests, and only then
+deploys to Fly and polls `/health?deep=1` until it reports healthy. It deploys the *committed* tree,
+which is the point — `fly deploy` from a laptop ships your working directory, so untracked or
+half-written files reach production.
+
+Manual deploy, when you need to ship something that is not on master:
+
 ```bash
 # from repo root
 npm ci && npm run build            # typecheck locally first
 fly deploy . --config deploy/hosted/fly/fly.toml --app openbrain-ahuvi
-
-# schema changes are NOT applied by the deploy — run them against Supabase:
-DB_HOST=… DB_PORT=6543 DB_NAME=… DB_USER=… DB_PASSWORD=… DB_SSL=true npm run db:migrate
 ```
+
+**Schema changes are never applied by a deploy** — not by CI either, deliberately. Migrations are run
+by hand, against the Supabase **pooler** (port 6543, confirmed working for DDL with migration 005):
+
+```bash
+DB_HOST=aws-0-<region>.pooler.supabase.com DB_PORT=6543 DB_NAME=postgres \
+  DB_USER=postgres.<project-ref> DB_PASSWORD=… DB_SSL=true npm run db:migrate
+```
+
+Check first with `npm run db:migrate:status` (read-only — lists applied and pending). A server running
+ahead of its migration degrades rather than failing: hybrid search logs a warning and falls back to
+semantic-only.
+
+### CI/CD secret
+
+The deploy job needs a `FLY_API_TOKEN` repository secret (Settings → Secrets and variables → Actions).
+Mint a deploy-scoped one and rotate it the same way:
+
+```bash
+fly tokens create deploy -x 8760h --app openbrain-ahuvi   # 1 year, deploy scope only
+fly tokens list --app openbrain-ahuvi                     # audit
+fly tokens revoke <id>                                    # revoke
+```
+
+The deploy job is gated on `github.event_name == 'push'` so a pull-request build — including one from
+a fork of this public repo — never sees the token.
 
 Set/rotate a secret (triggers a rolling restart):
 
