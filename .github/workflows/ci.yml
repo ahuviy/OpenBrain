@@ -106,3 +106,76 @@ jobs:
           done
           echo "Health check never reported healthy after deploy." >&2
           exit 1
+
+  # One notification per run, whatever happened. `always()` so a failed gate
+  # still reports — a pipeline that only tells you about successes is a
+  # pipeline you stop trusting.
+  #
+  # Commit subject and author are read with git rather than interpolated from
+  # the github context: this repository is public, and `${{ }}` expansion of
+  # attacker-controlled text into a shell script is a script-injection hole.
+  notify:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, docker, deploy]
+    if: always() && github.event_name != 'pull_request'
+
+    env:
+      NTFY_URL: ${{ secrets.NTFY_URL }}
+      BUILD_RESULT: ${{ needs.build-and-test.result }}
+      DOCKER_RESULT: ${{ needs.docker.result }}
+      DEPLOY_RESULT: ${{ needs.deploy.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Send ntfy notification
+        if: env.NTFY_URL != ''
+        run: |
+          set -euo pipefail
+
+          subject=$(git log -1 --pretty=%s)
+          author=$(git log -1 --pretty=%an)
+          short_sha=$(git rev-parse --short HEAD)
+
+          # A job that did not run is not a failure; anything else is. Checking
+          # every job matters — a green notification that hid a failed image
+          # push would be worse than no notification.
+          ok() { [ "$1" = "success" ] || [ "$1" = "skipped" ]; }
+
+          if [ "$BUILD_RESULT" = "success" ] && ok "$DEPLOY_RESULT" && ok "$DOCKER_RESULT"; then
+            title="Open Brain CI passed"
+            priority="default"
+            tags="white_check_mark"
+            headline="Deployed and healthy."
+            [ "$DEPLOY_RESULT" = "skipped" ] && headline="Build and tests passed (no deploy for this run)."
+          else
+            title="Open Brain CI FAILED"
+            priority="urgent"
+            tags="rotating_light"
+            failed=""
+            [ "$BUILD_RESULT" != "success" ] && failed="build-and-test"
+            [ "$DEPLOY_RESULT" != "success" ] && [ "$DEPLOY_RESULT" != "skipped" ] && failed="${failed:+$failed, }deploy"
+            [ "$DOCKER_RESULT" != "success" ] && [ "$DOCKER_RESULT" != "skipped" ] && failed="${failed:+$failed, }docker"
+            headline="Failed: ${failed:-unknown}."
+          fi
+
+          # Header values must be ASCII — HTTP headers are Latin-1 and a commit
+          # subject with an em dash or Hebrew would be rejected. Details that may
+          # carry non-ASCII go in the UTF-8 body instead.
+          body=$(printf '%s\n\n%s\n%s by %s\nbranch %s\n\nbuild: %s | docker: %s | deploy: %s\n\n%s' \
+            "$headline" \
+            "$short_sha" "$subject" "$author" \
+            "${GITHUB_REF_NAME}" \
+            "$BUILD_RESULT" "$DOCKER_RESULT" "$DEPLOY_RESULT" \
+            "$RUN_URL")
+
+          curl -fsS --max-time 20 \
+            -H "Title: ${title}" \
+            -H "Priority: ${priority}" \
+            -H "Tags: ${tags}" \
+            -H "Actions: view, Open run, ${RUN_URL}; view, Open app, https://openbrain-ahuvi.fly.dev/health?deep=1" \
+            -d "$body" \
+            "$NTFY_URL" > /dev/null
+
+          echo "Notified: ${title} (${short_sha})"
