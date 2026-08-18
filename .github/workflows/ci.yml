@@ -5,6 +5,9 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Manual runs deploy whatever master currently points at — useful for
+  # re-deploying without an empty commit, e.g. after changing a Fly secret.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -66,12 +69,13 @@ jobs:
   # ships the working directory, so uncommitted or half-written files reach
   # production. Here the only input is the commit that passed the gate above.
   #
-  # `push` to master only — a pull_request build from a fork must never see
-  # FLY_API_TOKEN, and this repository is public.
+  # master only, and never on a pull_request: a PR build from a fork of this
+  # public repository must not see FLY_API_TOKEN. Manual dispatch is allowed
+  # because only someone with write access can trigger it.
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
 
     # Never let two deploys race for the same machine. Not cancel-in-progress:
     # killing flyctl mid-rollout leaves the release half-applied.
