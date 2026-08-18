@@ -32,6 +32,13 @@ describe("findDuplicate", () => {
     expect(await findDuplicate(search, [0.1], options)).toBeUndefined();
   });
 
+  it("ignores a NaN similarity from a degenerate stored embedding", async () => {
+    // Postgres compares NaN as greater than every float, so such a row comes
+    // back as the "nearest" neighbour for any query. It is not a duplicate.
+    const search: SimilaritySearch = vi.fn(async () => [match(NaN)]);
+    expect(await findDuplicate(search, [0.1], options)).toBeUndefined();
+  });
+
   it("returns nothing when the brain is empty", async () => {
     const search: SimilaritySearch = vi.fn(async () => []);
     expect(await findDuplicate(search, [0.1], options)).toBeUndefined();

@@ -53,7 +53,8 @@ export async function findDuplicate(
 
   const matches = await search(embedding, options.threshold, options.project);
   const best = Array.isArray(matches) ? matches[0] : undefined;
-  if (!best || best.similarity < options.threshold) return undefined;
+  if (!best || !Number.isFinite(best.similarity)) return undefined;
+  if (best.similarity < options.threshold) return undefined;
 
   return {
     id: best.id,

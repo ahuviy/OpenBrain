@@ -9,6 +9,7 @@ import type pg from "pg";
 import {
   insertThought,
   searchThoughts,
+  hybridSearchThoughts,
   listThoughts,
   getThoughtStats,
   updateThought,
@@ -374,5 +375,64 @@ describe("batchInsertThoughts", () => {
 
     // Should have called ROLLBACK
     expect(client.query).toHaveBeenCalledWith("ROLLBACK");
+  });
+});
+
+// ─── hybridSearchThoughts ───────────────────────────────────────────
+
+describe("hybridSearchThoughts", () => {
+  it("calls the fusion function with the query text alongside the embedding", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    await hybridSearchThoughts(pool, [0.1, 0.2], "gaya.org.il", 5, 0.4, { type: "reference" }, "personal", false, "ahuvi");
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("hybrid_match_thoughts");
+    expect(params[0]).toBe("[0.1,0.2]");
+    expect(params[1]).toBe("gaya.org.il");
+    expect(params[2]).toBe(5);
+    expect(params[3]).toBe(0.4);
+    expect(params[5]).toBe("personal");
+  });
+
+  it("returns fused rows untouched", async () => {
+    const { pool, mockQuery } = createMockPool();
+    const row = {
+      id: "id-1",
+      content: "x",
+      metadata: {},
+      similarity: 0.3,
+      text_rank: 0.06,
+      score: 0.016,
+      matched_by: "text",
+      created_at: new Date(),
+    };
+    mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+    expect(await hybridSearchThoughts(pool, [0.1], "x")).toEqual([row]);
+  });
+
+  it("falls back to semantic search when migration 005 has not been applied", async () => {
+    const { pool, mockQuery } = createMockPool();
+    const undefinedFunction = Object.assign(new Error("function does not exist"), { code: "42883" });
+    mockQuery.mockRejectedValueOnce(undefinedFunction);
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: "id-1", content: "x", metadata: {}, similarity: 0.8, created_at: new Date() }],
+    });
+
+    const results = await hybridSearchThoughts(pool, [0.1], "x");
+
+    expect(mockQuery.mock.calls[1]![0]).toContain("match_thoughts");
+    expect(results[0]!.matched_by).toBe("semantic");
+    expect(results[0]!.score).toBe(0.8);
+    expect(results[0]!.text_rank).toBe(0);
+  });
+
+  it("propagates errors that are not a missing function", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockRejectedValueOnce(Object.assign(new Error("connection refused"), { code: "08006" }));
+
+    await expect(hybridSearchThoughts(pool, [0.1], "x")).rejects.toThrow("connection refused");
   });
 });

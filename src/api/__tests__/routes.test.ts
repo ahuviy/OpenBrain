@@ -36,6 +36,7 @@ vi.mock("../../embedder/index.js", () => ({
 // Mock query functions
 const mockInsertThought = vi.fn();
 const mockSearchThoughts = vi.fn();
+const mockHybridSearchThoughts = vi.fn().mockResolvedValue([]);
 const mockListThoughts = vi.fn();
 const mockGetThoughtStats = vi.fn();
 const mockUpdateThought = vi.fn();
@@ -46,6 +47,7 @@ const mockListDistinctTopics = vi.fn().mockResolvedValue(["test"]);
 vi.mock("../../db/queries.js", () => ({
   insertThought: (...args: any[]) => mockInsertThought(...args),
   searchThoughts: (...args: any[]) => mockSearchThoughts(...args),
+  hybridSearchThoughts: (...args: any[]) => mockHybridSearchThoughts(...args),
   listThoughts: (...args: any[]) => mockListThoughts(...args),
   getThoughtStats: (...args: any[]) => mockGetThoughtStats(...args),
   updateThought: (...args: any[]) => mockUpdateThought(...args),
@@ -123,7 +125,7 @@ describe("REST API Routes", () => {
   // ─── POST /memories/search ─────────────────────────────────────────
 
   it("POST /memories/search accepts filter params", async () => {
-    mockSearchThoughts.mockResolvedValueOnce([]);
+    mockHybridSearchThoughts.mockResolvedValueOnce([]);
 
     const res = await app.request("/memories/search", {
       method: "POST",
@@ -139,11 +141,59 @@ describe("REST API Routes", () => {
 
     expect(res.status).toBe(200);
 
-    // Verify searchThoughts was called with project, include_archived, and created_by
-    expect(mockSearchThoughts).toHaveBeenCalled();
+    // Hybrid is the default; the raw query text is passed for the full-text leg.
+    expect(mockHybridSearchThoughts).toHaveBeenCalled();
+    const callArgs = mockHybridSearchThoughts.mock.calls[0]!;
+    expect(callArgs[2]).toBe("caching decisions"); // query text
+    expect(callArgs[6]).toBe("plan-forge");        // project param
+    expect(callArgs[7]).toBe(false);               // include_archived param
+  });
+
+  it("POST /memories/search honours mode=semantic", async () => {
+    mockSearchThoughts.mockResolvedValueOnce([]);
+
+    const res = await app.request("/memories/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: "caching decisions",
+        project: "plan-forge",
+        include_archived: false,
+        mode: "semantic",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockHybridSearchThoughts).not.toHaveBeenCalled();
     const callArgs = mockSearchThoughts.mock.calls[0]!;
     expect(callArgs[5]).toBe("plan-forge"); // project param
     expect(callArgs[6]).toBe(false);        // include_archived param
+  });
+
+  it("POST /memories/search reports which leg matched each hybrid result", async () => {
+    mockHybridSearchThoughts.mockResolvedValueOnce([
+      {
+        id: "id-1",
+        content: "call 03-5340199",
+        metadata: {},
+        similarity: 0.41,
+        text_rank: 0.0607,
+        score: 0.0164,
+        matched_by: "text",
+        created_at: new Date(),
+      },
+    ]);
+
+    const res = await app.request("/memories/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: "03-5340199" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { mode: string; results: { matched_by: string }[] };
+    expect(body.mode).toBe("hybrid");
+    expect(body.results[0]!.matched_by).toBe("text");
   });
 
   // ─── PUT /memories/:id ─────────────────────────────────────────────

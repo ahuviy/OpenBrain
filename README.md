@@ -257,17 +257,19 @@ instead of Pinecone. Reason: self-hosted, lower cost, simpler stack."
 
 ### `search_thoughts`
 
-Semantic vector search — find thoughts by meaning, not exact keywords. Supports project scoping and metadata filters.
+Hybrid search — semantic vector similarity **fused with full-text search**, so a thought is findable both by what it is about and by an exact token inside it. Supports project scoping and metadata filters. See [Hybrid search](#hybrid-search) for the mechanics.
 
 ```
-"Search my brain for database migration decisions"
+"Search my brain for database migration decisions"   → semantic leg
+"Search my brain for 03-5340199"                     → full-text leg
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `query` | string | *required* | Natural language search query |
 | `limit` | integer | 10 | Maximum results |
-| `threshold` | float | 0.5 | Minimum similarity score (0-1) |
+| `threshold` | float | 0.5 | Minimum similarity for the **semantic leg**. Literal full-text matches are returned regardless |
+| `mode` | string | `"hybrid"` | `"hybrid"` fuses both legs; `"semantic"` searches by meaning only |
 | `project` | string | — | Scope to a specific project |
 | `type` | string | — | Filter by thought type |
 | `topic` | string | — | Filter by topic tag |
@@ -327,6 +329,28 @@ Batch capture multiple thoughts in one call. Each thought gets independent embed
 | `new_topics` | boolean | Allow these captures to mint unseen topic tags |
 
 Items that duplicate an existing thought, or that fail a discipline rule, are skipped rather than written — the response lists them under `skipped` with the index of each.
+
+## Hybrid search
+
+Embeddings are good at meaning and bad at rare literals. A phone number, an arXiv id, a domain, a proper noun, or a token in a language the embedder barely covers all live in the content but do not survive the trip through a vector. Open Brain runs a full-text leg alongside the vector one and fuses the two rankings.
+
+**The index.** A generated `content_tsv` column concatenates two configurations: `'english'` stems (so "disputes" finds "dispute"), and `'simple'` does not (so `03-5340199`, `gaya.org.il` and Hebrew tokens survive verbatim — Postgres ships no Hebrew stemmer, and `'english'` alone would be the only lens on that text). GIN-indexed, generated `STORED`, so it backfills on migration and recomputes on every update with no application code involved.
+
+**The fusion.** Reciprocal Rank Fusion — `score = Σ 1/(k + rank)` over each list the row appears in, `k = 60`. RRF needs no calibration between the legs: cosine similarity and `ts_rank_cd` are not on comparable scales, and any weighted sum of them would be a tuning knob that silently rots. Each result reports `matched_by` (`semantic` / `text` / `both`) so you can see which leg found it.
+
+**Query semantics.** The text leg uses `websearch_to_tsquery`, which ANDs the terms — it is a precision instrument for words you expect to appear verbatim. Fuzzy, descriptive queries are the vector leg's job, which is why both run on every search.
+
+**Threshold.** `threshold` bounds the semantic leg only. A literal match is returned even when its embedding is nowhere near the query — that is the entire point.
+
+Requires migration 005:
+
+```bash
+npm run db:migrate
+```
+
+A server running ahead of its migration logs a warning and falls back to semantic-only search rather than failing.
+
+The pre-write duplicate check deliberately stays pure-vector: it wants a calibrated similarity threshold, not a fused rank.
 
 ## Capture discipline
 

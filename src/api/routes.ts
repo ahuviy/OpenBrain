@@ -13,6 +13,7 @@ import { notifyFailure } from "../notify.js";
 import {
   insertThought,
   searchThoughts,
+  hybridSearchThoughts,
   listThoughts,
   getThoughtStats,
   updateThought,
@@ -75,6 +76,7 @@ export function createApi(): Hono {
       "delete",
       "stats",
       "by-source",
+      "hybrid-search",
       "strict-validation",
       "warning-channel",
       "embed-truncation-warning",
@@ -339,6 +341,7 @@ export function createApi(): Hono {
       type?: string;
       topic?: string;
       include_archived?: boolean;
+      mode?: "hybrid" | "semantic";
     }>();
 
     if (!body.query || body.query.trim().length === 0) {
@@ -351,10 +354,39 @@ export function createApi(): Hono {
       if (body.type) filter.type = body.type;
       if (body.topic) filter.topics = [body.topic];
 
+      const mode = body.mode ?? "hybrid";
       const queryEmbedding = await embedder.generateEmbedding(body.query);
-      const results = await searchThoughts(
+
+      if (mode === "semantic") {
+        const results = await searchThoughts(
+          pool,
+          queryEmbedding,
+          body.limit ?? 10,
+          body.threshold ?? 0.5,
+          filter,
+          body.project,
+          body.include_archived,
+          body.created_by
+        );
+
+        return c.json({
+          query: body.query,
+          mode,
+          count: results.length,
+          results: results.map((r) => ({
+            id: r.id,
+            content: r.content,
+            metadata: r.metadata,
+            similarity: Math.round(r.similarity * 1000) / 1000,
+            created_at: r.created_at.toISOString(),
+          })),
+        });
+      }
+
+      const results = await hybridSearchThoughts(
         pool,
         queryEmbedding,
+        body.query,
         body.limit ?? 10,
         body.threshold ?? 0.5,
         filter,
@@ -365,11 +397,16 @@ export function createApi(): Hono {
 
       return c.json({
         query: body.query,
+        mode: "hybrid",
         count: results.length,
         results: results.map((r) => ({
+          id: r.id,
           content: r.content,
           metadata: r.metadata,
           similarity: Math.round(r.similarity * 1000) / 1000,
+          text_rank: Math.round(r.text_rank * 100000) / 100000,
+          score: Math.round(r.score * 100000) / 100000,
+          matched_by: r.matched_by,
           created_at: r.created_at.toISOString(),
         })),
       });

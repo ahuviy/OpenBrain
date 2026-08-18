@@ -86,6 +86,9 @@ Server→ntfy→phone is the only app-independent way to get a *loud* phone aler
 # from repo root
 npm ci && npm run build            # typecheck locally first
 fly deploy . --config deploy/hosted/fly/fly.toml --app openbrain-ahuvi
+
+# schema changes are NOT applied by the deploy — run them against Supabase:
+DB_HOST=… DB_PORT=6543 DB_NAME=… DB_USER=… DB_PASSWORD=… DB_SSL=true npm run db:migrate
 ```
 
 Set/rotate a secret (triggers a rolling restart):

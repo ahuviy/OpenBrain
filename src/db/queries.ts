@@ -36,6 +36,17 @@ export interface SearchResult extends ThoughtRow {
   similarity: number;
 }
 
+/** Which retrieval leg surfaced a hybrid result. */
+export type MatchedBy = "semantic" | "text" | "both";
+
+export interface HybridSearchResult extends SearchResult {
+  /** ts_rank_cd of the full-text leg; 0 when only the vector leg matched. */
+  text_rank: number;
+  /** Reciprocal-rank-fusion score the ordering is based on. */
+  score: number;
+  matched_by: MatchedBy;
+}
+
 export interface ThoughtStats {
   total_thoughts: number;
   types: Record<string, number>;
@@ -106,6 +117,64 @@ export async function searchThoughts(
   );
 
   return rows;
+}
+
+// ─── Hybrid Search ───────────────────────────────────────────────────
+
+/** Postgres "undefined function" — the 005 migration has not been applied. */
+const UNDEFINED_FUNCTION = "42883";
+
+/**
+ * Semantic search fused with full-text search over the same corpus.
+ *
+ * Embeddings lose rare literals — phone numbers, arXiv ids, domains, and tokens
+ * in a language the embedder barely covers. The full-text leg catches exactly
+ * those, and Reciprocal Rank Fusion merges the two rankings without needing
+ * their scores to be on a comparable scale.
+ *
+ * Falls back to pure vector search when the database predates migration 005, so
+ * a server deployed ahead of its migration degrades instead of failing.
+ */
+export async function hybridSearchThoughts(
+  pool: pg.Pool,
+  queryEmbedding: number[],
+  queryText: string,
+  limit: number = 10,
+  threshold: number = 0.5,
+  filter: Record<string, unknown> = {},
+  project?: string,
+  include_archived?: boolean,
+  created_by?: string
+): Promise<HybridSearchResult[]> {
+  const embeddingStr = `[${queryEmbedding.join(",")}]`;
+
+  try {
+    const { rows } = await pool.query<HybridSearchResult>(
+      `SELECT id, content, metadata, similarity, text_rank, score, matched_by, created_at
+       FROM hybrid_match_thoughts($1::vector, $2, $3, $4, $5::jsonb, $6, $7, $8)`,
+      [
+        embeddingStr,
+        queryText,
+        limit,
+        threshold,
+        JSON.stringify(filter),
+        project ?? null,
+        include_archived ?? false,
+        created_by ?? null,
+      ]
+    );
+    return rows;
+  } catch (error) {
+    if ((error as { code?: string }).code !== UNDEFINED_FUNCTION) throw error;
+
+    console.warn(
+      "[search] hybrid_match_thoughts is missing — run `npm run db:migrate`. Falling back to semantic-only search."
+    );
+    const semantic = await searchThoughts(
+      pool, queryEmbedding, limit, threshold, filter, project, include_archived, created_by
+    );
+    return semantic.map((r) => ({ ...r, text_rank: 0, score: r.similarity, matched_by: "semantic" as const }));
+  }
 }
 
 // ─── Filtered List ───────────────────────────────────────────────────

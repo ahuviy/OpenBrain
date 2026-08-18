@@ -38,6 +38,7 @@ vi.mock("../../embedder/index.js", () => ({
 // Mock query functions
 const mockInsertThought = vi.fn();
 const mockSearchThoughts = vi.fn();
+const mockHybridSearchThoughts = vi.fn().mockResolvedValue([]);
 const mockListThoughts = vi.fn();
 const mockGetThoughtStats = vi.fn();
 const mockUpdateThought = vi.fn();
@@ -49,6 +50,7 @@ const mockSearchThoughtsBySource = vi.fn();
 vi.mock("../../db/queries.js", () => ({
   insertThought: (...args: any[]) => mockInsertThought(...args),
   searchThoughts: (...args: any[]) => mockSearchThoughts(...args),
+  hybridSearchThoughts: (...args: any[]) => mockHybridSearchThoughts(...args),
   listThoughts: (...args: any[]) => mockListThoughts(...args),
   getThoughtStats: (...args: any[]) => mockGetThoughtStats(...args),
   updateThought: (...args: any[]) => mockUpdateThought(...args),

@@ -18,6 +18,7 @@ import { notifyFailure } from "../notify.js";
 import {
   insertThought,
   searchThoughts,
+  hybridSearchThoughts,
   listThoughts,
   getThoughtStats,
   updateThought,
@@ -112,7 +113,7 @@ export function createMcpServer(): Server {
       {
         name: "search_thoughts",
         description:
-          "Search your brain for thoughts semantically related to a query. Returns results ranked by similarity score. Supports project scoping and metadata filters.\n\n" +
+          "Search your brain. Fuses semantic (meaning) search with full-text (literal) search, so it finds a thought both by what it is about and by an exact token in it — a phone number, a domain, an arXiv id, a proper noun. Supports project scoping and metadata filters.\n\n" +
           "Run this BEFORE every capture_thought: if a result is about the same thing, update that thought instead of adding a second copy of it.",
         inputSchema: {
           type: "object" as const,
@@ -128,8 +129,16 @@ export function createMcpServer(): Server {
             },
             threshold: {
               type: "number",
-              description: "Minimum similarity score 0-1 (default: 0.5)",
+              description:
+                "Minimum similarity for the semantic leg, 0-1 (default: 0.5). Literal full-text matches are returned regardless.",
               default: 0.5,
+            },
+            mode: {
+              type: "string",
+              enum: ["hybrid", "semantic"],
+              description:
+                "'hybrid' (default) fuses meaning and literal matching. 'semantic' searches by meaning only — use it when the query is a description rather than words you expect to appear verbatim.",
+              default: "hybrid",
             },
             project: {
               type: "string",
@@ -408,15 +417,42 @@ export function createMcpServer(): Server {
           if (type) filter.type = type;
           if (topic) filter.topics = [topic];
 
+          const mode = (args?.mode as string | undefined) ?? "hybrid";
+
           const queryEmbedding = await embedder.generateEmbedding(query);
-          const results = await searchThoughts(
-            pool, queryEmbedding, limit, threshold, filter, project, include_archived, created_by
+
+          if (mode === "semantic") {
+            const results = await searchThoughts(
+              pool, queryEmbedding, limit, threshold, filter, project, include_archived, created_by
+            );
+            const formatted = results.map((r) => ({
+              id: r.id,
+              content: r.content,
+              metadata: r.metadata,
+              similarity: Math.round(r.similarity * 1000) / 1000,
+              created_at: r.created_at.toISOString(),
+            }));
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({ mode, count: formatted.length, results: formatted }, null, 2),
+                },
+              ],
+            };
+          }
+
+          const results = await hybridSearchThoughts(
+            pool, queryEmbedding, query, limit, threshold, filter, project, include_archived, created_by
           );
 
           const formatted = results.map((r) => ({
+            id: r.id,
             content: r.content,
             metadata: r.metadata,
             similarity: Math.round(r.similarity * 1000) / 1000,
+            matched_by: r.matched_by,
+            score: Math.round(r.score * 100000) / 100000,
             created_at: r.created_at.toISOString(),
           }));
 
@@ -424,7 +460,7 @@ export function createMcpServer(): Server {
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify({ count: formatted.length, results: formatted }, null, 2),
+                text: JSON.stringify({ mode: "hybrid", count: formatted.length, results: formatted }, null, 2),
               },
             ],
           };
