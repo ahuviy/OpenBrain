@@ -31,6 +31,12 @@ export interface DedupeOptions {
   force?: boolean;
   /** A capture that declares what it replaces is deliberate, never a duplicate. */
   supersedes?: string;
+  /**
+   * Narrows the search — but only ever from a project the CALLER supplied. Never
+   * pass a defaulted namespace here: thoughts written before that default existed
+   * carry `project = NULL`, and scoping to the default filters them out, so a
+   * verbatim re-capture of an old thought would sail straight through.
+   */
   project?: string;
 }
 

@@ -125,7 +125,7 @@ export function createApi(): Hono {
         threshold: config.dedupeThreshold,
         force,
         supersedes: input.supersedes,
-        project: input.project ?? (config.defaultProject || undefined),
+        project: input.project,
       });
       if (duplicate) {
         return c.json({ error: "duplicate_thought", duplicate }, 409);
@@ -226,7 +226,7 @@ export function createApi(): Hono {
             threshold: config.dedupeThreshold,
             force: batchForce,
             supersedes: item.supersedes,
-            project: item.project ?? (config.defaultProject || undefined),
+            project: item.project,
           });
           if (duplicate) {
             return { index, skipped: { reason: "duplicate" as const, duplicate } };

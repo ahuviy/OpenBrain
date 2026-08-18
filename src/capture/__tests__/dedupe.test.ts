@@ -62,6 +62,12 @@ describe("findDuplicate", () => {
     expect(search).toHaveBeenCalledWith([0.1], 0.9, "mono");
   });
 
+  it("searches the whole brain when the capture names no project", async () => {
+    const search: SimilaritySearch = vi.fn(async () => []);
+    await findDuplicate(search, [0.1], options);
+    expect(search).toHaveBeenCalledWith([0.1], 0.9, undefined);
+  });
+
   it("rounds similarity to three decimals for the caller", async () => {
     const search: SimilaritySearch = vi.fn(async () => [match(0.923456)]);
     expect((await findDuplicate(search, [0.1], options))?.similarity).toBe(0.923);

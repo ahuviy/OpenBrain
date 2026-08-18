@@ -489,7 +489,7 @@ export function createMcpServer(): Server {
             threshold: config.dedupeThreshold,
             force: args?.force === true,
             supersedes: input.supersedes,
-            project: input.project ?? (config.defaultProject || undefined),
+            project: input.project,
           });
           if (duplicate) {
             return {
@@ -678,7 +678,7 @@ export function createMcpServer(): Server {
                 threshold: batchConfig.dedupeThreshold,
                 force: args?.force === true,
                 supersedes: item.supersedes,
-                project: item.project ?? (batchConfig.defaultProject || undefined),
+                project: item.project,
               });
               if (duplicate) {
                 return { index, skipped: { reason: "duplicate" as const, duplicate } };
