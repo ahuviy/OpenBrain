@@ -43,6 +43,7 @@ const mockGetThoughtStats = vi.fn();
 const mockUpdateThought = vi.fn();
 const mockDeleteThought = vi.fn();
 const mockBatchInsertThoughts = vi.fn();
+const mockListDistinctTopics = vi.fn().mockResolvedValue(["test"]);
 const mockSearchThoughtsBySource = vi.fn();
 
 vi.mock("../../db/queries.js", () => ({
@@ -53,6 +54,7 @@ vi.mock("../../db/queries.js", () => ({
   updateThought: (...args: any[]) => mockUpdateThought(...args),
   deleteThought: (...args: any[]) => mockDeleteThought(...args),
   batchInsertThoughts: (...args: any[]) => mockBatchInsertThoughts(...args),
+  listDistinctTopics: (...args: any[]) => mockListDistinctTopics(...args),
   searchThoughtsBySource: (...args: any[]) => mockSearchThoughtsBySource(...args),
 }));
 
@@ -152,6 +154,7 @@ describe("Provenance API Features", () => {
           content: "valid content",
           source: "cli",
           project: "my-proj",
+          metadata: { type: "reference" },
         }),
       });
       expect(res.status).toBe(200);
@@ -169,7 +172,7 @@ describe("Provenance API Features", () => {
       const res = await app.request("/memories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: "valid content" }),
+        body: JSON.stringify({ content: "valid content", metadata: { type: "reference" } }),
       });
       expect(res.status).toBe(200);
     });

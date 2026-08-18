@@ -1,0 +1,19 @@
+{
+  "_comment": "Capture-discipline rules. Copy to config/discipline.json and edit. Every key is optional; env vars (OPENBRAIN_*) override this file.",
+
+  "requireSpecificType": true,
+  "requireKnownTopics": false,
+  "defaultProject": "personal",
+  "requireProject": false,
+  "dedupeEnabled": true,
+  "dedupeThreshold": 0.9,
+
+  "personAliases": {
+    "dohmen": "Bert Dohmen"
+  },
+  "selfNames": ["Ahuvi"],
+  "topicAliases": {
+    "markets": "market-analysis",
+    "stocks": "market-analysis"
+  }
+}

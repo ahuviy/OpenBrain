@@ -66,6 +66,10 @@ There are **five canonical paths**. Pick one by interviewing the user — do not
 src/
   index.ts                Bootstraps REST + MCP servers
   api/routes.ts           REST endpoints — every MCP tool has a REST equivalent
+  capture/                Write-path enforcement, shared by REST and MCP
+    discipline.ts         type / people / topics / project rules (pure)
+    dedupe.ts             pre-write duplicate detection (pure)
+    vocabulary.ts         cached topic vocabulary for the new-tag gate
   db/connection.ts        pg pool
   db/queries.ts           All SQL (parameterized) lives here
   embedder/               Provider-agnostic embedder interface
@@ -109,6 +113,7 @@ OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
 - **All SQL parameterized.** Never string-concatenate user input. The codebase has zero raw-SQL injection sites; keep it that way.
 - **Provider abstraction.** Anything that talks to an LLM/embedder goes through `src/embedder/types.ts`. Don't sprinkle provider-specific calls elsewhere.
 - **Errors at boundaries only.** Validate at HTTP/MCP entry points; internal helpers trust their inputs.
+- **Write rules belong on the server, not in a prompt.** Anything that keeps the brain clean (dedupe, type discipline, tag vocabulary) goes in `src/capture/` so it binds on every transport — a phone client cannot run a hook or a checklist. Tool descriptions restate the rules for the model; they never substitute for them.
 - **No new direct deps without justification.** This codebase intentionally has few dependencies. Prefer std lib + `pg` + the MCP SDK.
 - **Tests live next to code** (`src/foo/__tests__/foo.test.ts`), except integration tests which live in `src/__integration__/`.
 

@@ -245,10 +245,15 @@ instead of Pinecone. Reason: self-hosted, lower cost, simpler stack."
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `content` | string | *required* | The thought to capture |
+| `type` | string | inferred | Thought type — the most specific one that fits. An *inferred* `observation` is rejected; see [Capture discipline](#capture-discipline) |
+| `topics` | string[] | inferred | 1-3 topic tags, reusing the brain's existing vocabulary |
+| `people` | string[] | inferred | People mentioned, by canonical full name |
 | `project` | string | — | Scope to a project/workspace |
 | `source` | string | `"mcp"` | Provenance tracking (which session/tool) |
 | `supersedes` | string | — | UUID of a prior thought this replaces |
 | `created_by` | string | — | User who created this thought (optional, for multi-developer teams) |
+| `force` | boolean | false | Write even if a near-identical thought already exists |
+| `new_topics` | boolean | false | Allow this capture to mint topic tags the brain has never used |
 
 ### `search_thoughts`
 
@@ -315,9 +320,46 @@ Batch capture multiple thoughts in one call. Each thought gets independent embed
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `thoughts` | array | *required* — Array of `{ content: string }` objects |
+| `thoughts` | array | *required* — Array of `{ content, type?, topics?, people? }` objects |
 | `project` | string | Scope all thoughts to a project |
 | `source` | string | Provenance tracking (default: `"mcp"`) |
+| `force` | boolean | Write every item even if a near-identical thought exists |
+| `new_topics` | boolean | Allow these captures to mint unseen topic tags |
+
+Items that duplicate an existing thought, or that fail a discipline rule, are skipped rather than written — the response lists them under `skipped` with the index of each.
+
+## Capture discipline
+
+Prompt-side write discipline ("search first, pick a specific type, reuse the tag that already exists") does not survive a phone. Mobile clients have no hooks, no settings file and no way to run a checklist before a tool call, so a brain captured mostly from a phone drifts: `observation` becomes a dumping ground, the same person accumulates three spellings, and near-duplicate topic tags pile up.
+
+Open Brain enforces the rules on the **write path** instead, where every transport hits them — REST, MCP-over-stdio, and the OAuth connector used by the claude.ai mobile app.
+
+| Rule | What it does | Switch |
+|------|--------------|--------|
+| **Dedupe on write** | Before inserting, compares the capture's embedding against its nearest neighbour. At or above the threshold the write is refused and the caller gets the existing id, so it can `update_thought` instead of adding a second copy. Costs one vector query and no extra embedding call. | `OPENBRAIN_DEDUPE_ENABLED`, `OPENBRAIN_DEDUPE_THRESHOLD` (default `0.9`) |
+| **Require a specific type** | The extractor returns `observation` both when it means it and when it gave up. A capture that *fell back* to `observation` is refused with the list of 13 types; passing `type: "observation"` explicitly is always accepted. | `OPENBRAIN_REQUIRE_SPECIFIC_TYPE` (default on) |
+| **Canonical people** | Applies an alias map (`dohmen` → `Bert Dohmen`) and drops the brain owner — a thought is not a mention of the person who wrote it. | `selfNames` / `personAliases` in the config file |
+| **Topic vocabulary** | Normalises tag shape, applies a topic alias map, and snaps a plural onto an existing singular (or vice versa). Optionally refuses tags the brain has never used unless the caller passes `new_topics: true`. | `OPENBRAIN_REQUIRE_KNOWN_TOPICS` (default off), `topicAliases` |
+| **Never a null namespace** | A capture with no `project` is filed under a default one, or refused outright. | `OPENBRAIN_DEFAULT_PROJECT` (default `personal`), `OPENBRAIN_REQUIRE_PROJECT` |
+
+Refusals come back as MCP tool errors (`isError`) and as HTTP `409` (duplicate) / `422` (discipline) on REST. Each one names the fix, so a client resolves it in one more call rather than failing silently.
+
+Rule *data* lives in `config/discipline.json` — copy `config/discipline.example.json` and edit:
+
+```json
+{
+  "requireSpecificType": true,
+  "defaultProject": "personal",
+  "dedupeThreshold": 0.9,
+  "personAliases": { "dohmen": "Bert Dohmen" },
+  "selfNames": ["Ahuvi"],
+  "topicAliases": { "markets": "market-analysis", "stocks": "market-analysis" }
+}
+```
+
+Environment variables override the file; the file overrides the defaults. `GET /health` lists the active rules in its `capabilities` array.
+
+Topic snapping is deliberately lexical rather than semantic: an embedding call per tag would double the latency of every phone capture, and a near-miss snap is worse than a flagged new tag.
 | `created_by` | string | User who created these thoughts (optional) |
 
 ---

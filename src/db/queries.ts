@@ -437,3 +437,43 @@ export async function batchInsertThoughts(
 
   return results;
 }
+
+// ─── Topic Vocabulary ────────────────────────────────────────────────
+
+/**
+ * Distinct topic tags already used in the brain, most-used first. Feeds the
+ * capture-discipline vocabulary gate, which keeps near-duplicate tags
+ * (`markets` / `market-analysis`) from accumulating.
+ */
+export async function listDistinctTopics(
+  pool: pg.Pool,
+  project?: string,
+  limit: number = 500
+): Promise<string[]> {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let idx = 0;
+
+  if (project) {
+    idx++;
+    conditions.push(`t.project = $${idx}`);
+    params.push(project);
+  }
+
+  idx++;
+  params.push(limit);
+
+  const whereClause = conditions.length > 0 ? "AND " + conditions.join(" AND ") : "";
+
+  const { rows } = await pool.query<{ topic: string }>(
+    `SELECT topic
+     FROM thoughts t, jsonb_array_elements_text(t.metadata->'topics') AS topic
+     WHERE TRUE ${whereClause}
+     GROUP BY topic
+     ORDER BY COUNT(*) DESC
+     LIMIT $${idx}`,
+    params
+  );
+
+  return rows.map((r) => r.topic);
+}

@@ -1,0 +1,22 @@
+{
+  "requireSpecificType": true,
+  "requireKnownTopics": false,
+  "defaultProject": "personal",
+  "requireProject": false,
+  "dedupeEnabled": true,
+  "dedupeThreshold": 0.9,
+  "personAliases": {
+    "dohmen": "Bert Dohmen",
+    "bert": "Bert Dohmen",
+    "weber": "Chris Weber",
+    "ahuviy": "Ahuvi"
+  },
+  "selfNames": [
+    "Ahuvi"
+  ],
+  "topicAliases": {
+    "markets": "market-analysis",
+    "stocks": "market-analysis",
+    "economic-indicators": "market-analysis"
+  }
+}

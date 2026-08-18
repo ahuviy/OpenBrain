@@ -41,6 +41,7 @@ const mockGetThoughtStats = vi.fn();
 const mockUpdateThought = vi.fn();
 const mockDeleteThought = vi.fn();
 const mockBatchInsertThoughts = vi.fn();
+const mockListDistinctTopics = vi.fn().mockResolvedValue(["test"]);
 
 vi.mock("../../db/queries.js", () => ({
   insertThought: (...args: any[]) => mockInsertThought(...args),
@@ -50,6 +51,7 @@ vi.mock("../../db/queries.js", () => ({
   updateThought: (...args: any[]) => mockUpdateThought(...args),
   deleteThought: (...args: any[]) => mockDeleteThought(...args),
   batchInsertThoughts: (...args: any[]) => mockBatchInsertThoughts(...args),
+  listDistinctTopics: (...args: any[]) => mockListDistinctTopics(...args),
 }));
 
 import { createApi } from "../routes.js";
@@ -88,6 +90,7 @@ describe("REST API Routes", () => {
         content: "We chose Redis for caching",
         project: "plan-forge",
         supersedes: "a1b2c3d4-1234-5678-9abc-def012345678",
+        metadata: { type: "decision" },
       }),
     });
 
@@ -238,7 +241,10 @@ describe("REST API Routes", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        thoughts: [{ content: "thought 1" }, { content: "thought 2" }],
+        thoughts: [
+          { content: "thought 1", metadata: { type: "idea" } },
+          { content: "thought 2", metadata: { type: "idea" } },
+        ],
         project: "proj",
         source: "plan-forge",
       }),

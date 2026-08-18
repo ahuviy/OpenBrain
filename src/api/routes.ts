@@ -30,6 +30,13 @@ import {
   logWarnings,
   isStrictIngestEnabled,
 } from "./validation.js";
+import {
+  applyCaptureDiscipline,
+  CaptureDisciplineError,
+  getDisciplineConfig,
+} from "../capture/discipline.js";
+import { findDuplicate } from "../capture/dedupe.js";
+import { getTopicVocabulary, rememberTopics } from "../capture/vocabulary.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -37,6 +44,10 @@ export function createApi(): Hono {
   const app = new Hono();
   const embedder = getEmbedder();
   const pool = getPool();
+
+  /** One nearest neighbour, for the pre-write duplicate check. */
+  const nearestNeighbour = (embedding: number[], threshold: number, project?: string) =>
+    searchThoughts(pool, embedding, 1, threshold, {}, project, false, undefined);
 
   // Middleware
   app.use("*", cors());
@@ -69,6 +80,12 @@ export function createApi(): Hono {
       "embed-truncation-warning",
     ];
     if (isStrictIngestEnabled()) capabilities.push("strict-ingest");
+
+    const discipline = getDisciplineConfig();
+    if (discipline.dedupeEnabled) capabilities.push("dedupe-on-write");
+    if (discipline.requireSpecificType) capabilities.push("require-specific-type");
+    if (discipline.requireKnownTopics) capabilities.push("require-known-topics");
+    if (discipline.requireProject) capabilities.push("require-project");
     return c.json({
       status: "healthy",
       service: "open-brain-api",
@@ -79,9 +96,15 @@ export function createApi(): Hono {
   // ─── Capture Memory ──────────────────────────────────────────────
 
   app.post("/memories", async (c) => {
+    const rawBody = (await c.req.json()) as Record<string, unknown>;
+    const force = rawBody.force === true;
+    const allowNewTopics = rawBody.new_topics === true;
+    delete rawBody.force;
+    delete rawBody.new_topics;
+
     let input;
     try {
-      input = validateCaptureInput(await c.req.json(), { defaultSource: "api" });
+      input = validateCaptureInput(rawBody, { defaultSource: "api" });
     } catch (err) {
       if (err instanceof CaptureValidationError) {
         return c.json({ error: err.message }, 400);
@@ -90,33 +113,73 @@ export function createApi(): Hono {
     }
 
     try {
+      const config = getDisciplineConfig();
+
       const [embedding, autoMetadata] = await Promise.all([
         embedder.generateEmbedding(input.content),
         embedder.extractMetadata(input.content),
       ]);
 
-      // Caller-supplied metadata wins over auto-extracted; both lose to `source` which
-      // is canonicalised at the top level so we can index on it.
-      const fullMetadata = { ...autoMetadata, ...input.metadata, source: input.source };
+      const duplicate = await findDuplicate(nearestNeighbour, embedding, {
+        enabled: config.dedupeEnabled,
+        threshold: config.dedupeThreshold,
+        force,
+        supersedes: input.supersedes,
+        project: input.project ?? (config.defaultProject || undefined),
+      });
+      if (duplicate) {
+        return c.json({ error: "duplicate_thought", duplicate }, 409);
+      }
+
+      let disciplined;
+      try {
+        disciplined = applyCaptureDiscipline({
+          extracted: autoMetadata,
+          callerMetadata: input.metadata,
+          project: input.project,
+          vocabulary: await getTopicVocabulary(pool),
+          allowNewTopics,
+          config,
+        });
+      } catch (err) {
+        if (err instanceof CaptureDisciplineError) {
+          return c.json({ error: err.message, field: err.field }, 422);
+        }
+        throw err;
+      }
+
+      // Caller-supplied metadata wins over auto-extracted; both lose to the fields the
+      // discipline pass normalised and to `source`, which is canonicalised at the top
+      // level so we can index on it.
+      const fullMetadata = {
+        ...autoMetadata,
+        ...input.metadata,
+        type: disciplined.type,
+        topics: disciplined.topics,
+        people: disciplined.people,
+        source: input.source,
+      };
       const result = await insertThought(
-        pool, input.content, embedding, fullMetadata, input.project, input.supersedes, input.created_by
+        pool, input.content, embedding, fullMetadata, disciplined.project, input.supersedes, input.created_by
       );
+      rememberTopics(disciplined.topics);
 
       logWarnings(input.warnings, {
         transport: "rest",
         source: input.source,
-        project: input.project,
+        project: disciplined.project,
         created_by: input.created_by,
       });
 
       return c.json({
         id: result.id,
-        type: (fullMetadata.type as string | undefined) ?? autoMetadata.type,
-        topics: (fullMetadata.topics as string[] | undefined) ?? autoMetadata.topics,
-        people: (fullMetadata.people as string[] | undefined) ?? autoMetadata.people,
+        type: disciplined.type,
+        topics: disciplined.topics,
+        people: disciplined.people,
         project: result.project,
         captured_at: result.created_at.toISOString(),
         warnings: input.warnings,
+        discipline_notes: disciplined.notes,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -131,9 +194,15 @@ export function createApi(): Hono {
   // ─── Batch Capture ───────────────────────────────────────────────
 
   app.post("/memories/batch", async (c) => {
+    const rawBatch = (await c.req.json()) as Record<string, unknown>;
+    const batchForce = rawBatch.force === true;
+    const batchAllowNewTopics = rawBatch.new_topics === true;
+    delete rawBatch.force;
+    delete rawBatch.new_topics;
+
     let batch;
     try {
-      batch = validateBatchInput(await c.req.json(), { defaultSource: "api" });
+      batch = validateBatchInput(rawBatch, { defaultSource: "api" });
     } catch (err) {
       if (err instanceof CaptureValidationError) {
         return c.json({ error: err.message }, 400);
@@ -142,23 +211,72 @@ export function createApi(): Hono {
     }
 
     try {
-      const processed: BatchThoughtInput[] = await Promise.all(
-        batch.items.map(async (item) => {
+      const config = getDisciplineConfig();
+      const vocabulary = await getTopicVocabulary(pool);
+
+      const prepared = await Promise.all(
+        batch.items.map(async (item, index) => {
           const [embedding, autoMetadata] = await Promise.all([
             embedder.generateEmbedding(item.content),
             embedder.extractMetadata(item.content),
           ]);
-          return {
-            content: item.content,
-            embedding,
-            metadata: { ...autoMetadata, ...item.metadata, source: item.source },
-            project: item.project,
-            created_by: item.created_by,
-          };
+
+          const duplicate = await findDuplicate(nearestNeighbour, embedding, {
+            enabled: config.dedupeEnabled,
+            threshold: config.dedupeThreshold,
+            force: batchForce,
+            supersedes: item.supersedes,
+            project: item.project ?? (config.defaultProject || undefined),
+          });
+          if (duplicate) {
+            return { index, skipped: { reason: "duplicate" as const, duplicate } };
+          }
+
+          try {
+            const disciplined = applyCaptureDiscipline({
+              extracted: autoMetadata,
+              callerMetadata: item.metadata,
+              project: item.project,
+              vocabulary,
+              allowNewTopics: batchAllowNewTopics,
+              config,
+            });
+            const thought: BatchThoughtInput = {
+              content: item.content,
+              embedding,
+              metadata: {
+                ...autoMetadata,
+                ...item.metadata,
+                type: disciplined.type,
+                topics: disciplined.topics,
+                people: disciplined.people,
+                source: item.source,
+              },
+              project: disciplined.project,
+              created_by: item.created_by,
+            };
+            return { index, thought, notes: disciplined.notes };
+          } catch (err) {
+            if (err instanceof CaptureDisciplineError) {
+              return { index, skipped: { reason: "rejected" as const, message: err.message } };
+            }
+            throw err;
+          }
         })
       );
 
-      const results = await batchInsertThoughts(pool, processed);
+      const writable = prepared.filter(
+        (p): p is { index: number; thought: BatchThoughtInput; notes: ReturnType<typeof applyCaptureDiscipline>["notes"] } =>
+          "thought" in p
+      );
+      const skipped = prepared
+        .filter((p): p is { index: number; skipped: NonNullable<(typeof prepared)[number]["skipped"]> } => "skipped" in p)
+        .map((p) => ({ index: p.index, ...p.skipped }));
+
+      const results = await batchInsertThoughts(pool, writable.map((w) => w.thought));
+      for (const w of writable) {
+        rememberTopics((w.thought.metadata.topics as string[] | undefined) ?? []);
+      }
 
       for (const w of batch.warnings) {
         console.warn(
@@ -182,15 +300,22 @@ export function createApi(): Hono {
 
       return c.json({
         count: results.length,
+        submitted: batch.items.length,
+        skipped,
         envelope_warnings: batch.warnings,
-        results: results.map((r, i) => ({
-          id: r.id,
-          content: r.content,
-          metadata: r.metadata,
-          project: r.project,
-          captured_at: r.created_at.toISOString(),
-          warnings: batch.items[i]?.warnings ?? [],
-        })),
+        results: results.map((r, i) => {
+          const origin = writable[i];
+          return {
+            id: r.id,
+            index: origin?.index ?? i,
+            content: r.content,
+            metadata: r.metadata,
+            project: r.project,
+            captured_at: r.created_at.toISOString(),
+            warnings: origin ? (batch.items[origin.index]?.warnings ?? []) : [],
+            discipline_notes: origin?.notes ?? [],
+          };
+        }),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
