@@ -913,6 +913,37 @@ export async function insertProposal(
   }
 }
 
+export interface PendingProposal {
+  id: string;
+  expires_at: Date;
+  item_count: number;
+}
+
+/**
+ * The proposal a project is waiting on, if any.
+ *
+ * Nothing surfaced this: unless `dream` happened to run again, a proposal
+ * lapsed unnoticed. Expiry is NOT the same as an explicit reject — a rejected
+ * proposal is a decision recorded as `applied`, while an expired one is a
+ * decision nobody made, and its judgments are gone either way.
+ *
+ * Already-expired rows are excluded: they cannot be applied, so reporting one
+ * as pending would send someone to review something dream_apply will refuse.
+ */
+export async function findOpenProposal(
+  pool: pg.Pool,
+  project: string
+): Promise<PendingProposal | undefined> {
+  const { rows } = await pool.query<PendingProposal>(
+    `SELECT id, expires_at, jsonb_array_length(items) AS item_count
+     FROM dream_proposals
+     WHERE project = $1 AND status = 'open' AND expires_at > now()`,
+    [project]
+  );
+
+  return rows[0];
+}
+
 export async function loadProposal(pool: pg.Pool, id: string): Promise<ProposalRow | undefined> {
   const { rows } = await pool.query<ProposalRow>(
     `SELECT id, project, created_at, expires_at, status, items FROM dream_proposals WHERE id = $1`,

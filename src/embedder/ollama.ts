@@ -71,6 +71,10 @@ export class OllamaEmbedder implements Embedder {
         ],
         format: "json",
         stream: false,
+        // Extraction reads what is already in the text; it is not creative
+        // work. At the default temperature the same input yields different
+        // action items on different calls, which makes the metadata uncheckable.
+        options: { temperature: 0 },
       }),
     });
 
@@ -108,6 +112,8 @@ export class OllamaEmbedder implements Embedder {
         ],
         ...(json ? { format: "json" } : {}),
         stream: false,
+        // Judging and summarising are decisions about given text, not writing.
+        options: { temperature: 0 },
       }),
     });
 

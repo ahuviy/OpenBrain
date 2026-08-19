@@ -27,6 +27,7 @@ import {
   type ListFilters,
   type BatchThoughtInput,
   listDreamRuns,
+  findOpenProposal,
 } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
 import {
@@ -306,6 +307,11 @@ export function createMcpServer(): Server {
               description: "Report what would change without writing anything.",
               default: false,
             },
+            since: {
+              type: "string",
+              description:
+                "Re-examine everything changed since this ISO timestamp instead of since the last run. Use \"1970-01-01\" for a full-corpus pass — the way to apply a consolidation fix to thoughts that predate it. Pair with dry_run first: a full pass embeds and judges far more than an incremental one.",
+            },
           },
         },
       },
@@ -363,6 +369,7 @@ export function createMcpServer(): Server {
         name: "thought_stats",
         description:
           "Get statistics about your brain: total thoughts, type distribution, top topics, and top people mentioned. Optionally scoped to a project or user.\n\n" +
+          "Also reports a pending proposal (`pending_proposal`) when one is open: proposals expire after DREAM_PROPOSAL_TTL_HOURS, and an expired one is a decision nobody made rather than a reject.\n\n" +
           "The top-topics list is the brain's tag vocabulary — read it before inventing a new tag.",
         inputSchema: {
           type: "object" as const,
@@ -709,7 +716,7 @@ export function createMcpServer(): Server {
               selfNames: discipline.selfNames,
             },
             thresholds,
-            { project: project ?? "", ops, dry_run, trigger: "mcp" },
+            { project: project ?? "", ops, dry_run, since: args?.since as string | undefined, trigger: "mcp" },
             () => new Date(),
           );
 
@@ -769,12 +776,15 @@ export function createMcpServer(): Server {
           const project = args?.project as string | undefined;
           const created_by = args?.created_by as string | undefined;
           const stats = await getThoughtStats(pool, project, created_by);
+          // Surfaced here because this is the tool a client calls habitually;
+          // a proposal nothing mentions expires unnoticed.
+          const pending = await findOpenProposal(pool, project ?? "");
 
           return {
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(stats, null, 2),
+                text: JSON.stringify({ ...stats, pending_proposal: pending ?? null }, null, 2),
               },
             ],
           };

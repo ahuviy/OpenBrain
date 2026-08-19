@@ -98,6 +98,29 @@ describe("MCP Server Tool Listing", () => {
     expect(Object.keys(history.inputSchema.properties).sort()).toEqual(["limit", "project"]);
   });
 
+  it("thought_stats says a proposal is pending, so it cannot lapse unnoticed", async () => {
+    const server = createMcpServer();
+    const handler = (server as any)._requestHandlers?.get("tools/list");
+    const result = await handler({ method: "tools/list" });
+
+    const stats = result.tools.find((t: any) => t.name === "thought_stats");
+
+    expect(stats.description).toMatch(/pending proposal/i);
+  });
+
+  it("dream can be pointed at an earlier window, so a fix can reach old thoughts", async () => {
+    // Without this every consolidation improvement is forward-only and blind to
+    // the part of the brain most likely to have accumulated mess.
+    const server = createMcpServer();
+    const handler = (server as any)._requestHandlers?.get("tools/list");
+    const result = await handler({ method: "tools/list" });
+
+    const dream = result.tools.find((t: any) => t.name === "dream");
+
+    expect(dream.inputSchema.properties.since).toBeDefined();
+    expect(dream.inputSchema.properties.since.description).toMatch(/1970|whole|full/i);
+  });
+
   it("dream exposes exactly the four known operations", async () => {
     const server = createMcpServer();
     const handler = (server as any)._requestHandlers?.get("tools/list");

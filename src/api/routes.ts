@@ -29,6 +29,7 @@ import {
   type ListFilters,
   type BatchThoughtInput,
   listDreamRuns,
+  findOpenProposal,
 } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
 import {
@@ -577,7 +578,10 @@ export function createApi(): Hono {
       const project = c.req.query("project");
       const created_by = c.req.query("created_by");
       const stats = await getThoughtStats(pool, project, created_by);
-      return c.json(stats);
+      // The REST twin of thought_stats, including the pending proposal: a
+      // proposal nothing mentions expires unnoticed.
+      const pending = await findOpenProposal(pool, project ?? "");
+      return c.json({ ...stats, pending_proposal: pending ?? null });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[api] Stats failed:", message);
@@ -592,7 +596,12 @@ export function createApi(): Hono {
   // transport, so neither port owns any dream logic.
   app.post("/dream", async (c) => {
     try {
-      const body = await c.req.json<{ project?: string; ops?: DreamOp[]; dry_run?: boolean }>();
+      const body = await c.req.json<{
+        project?: string;
+        ops?: DreamOp[];
+        dry_run?: boolean;
+        since?: string;
+      }>();
       const discipline = getDisciplineConfig();
       const port = createDreamPort(pool, embedder, getProposalTtlHours());
 
@@ -606,7 +615,13 @@ export function createApi(): Hono {
           selfNames: discipline.selfNames,
         },
         getDreamThresholds(),
-        { project: body.project ?? "", ops: body.ops, dry_run: body.dry_run === true, trigger: "rest" },
+        {
+          project: body.project ?? "",
+          ops: body.ops,
+          dry_run: body.dry_run === true,
+          since: body.since,
+          trigger: "rest",
+        },
         () => new Date(),
       );
 

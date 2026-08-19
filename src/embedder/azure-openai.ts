@@ -93,6 +93,10 @@ export class AzureOpenAIEmbedder implements Embedder {
           { role: "user", content },
         ],
         response_format: { type: "json_object" },
+        // Extraction reads what is already in the text; it is not creative
+        // work. At the default temperature the same input yields different
+        // action items on different calls, which makes the metadata uncheckable.
+        temperature: 0,
       }),
     });
 
@@ -138,6 +142,8 @@ export class AzureOpenAIEmbedder implements Embedder {
           { role: "user", content: user },
         ],
         ...(json ? { response_format: { type: "json_object" } } : {}),
+        // Judging and summarising are decisions about given text, not writing.
+        temperature: 0,
       }),
     });
 

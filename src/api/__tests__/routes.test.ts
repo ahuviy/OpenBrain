@@ -43,6 +43,8 @@ const mockUpdateThought = vi.fn();
 const mockDeleteThought = vi.fn();
 const mockBatchInsertThoughts = vi.fn();
 const mockListDistinctTopics = vi.fn().mockResolvedValue(["test"]);
+const mockFindOpenProposal = vi.fn().mockResolvedValue(undefined);
+const mockListDreamRuns = vi.fn().mockResolvedValue([]);
 
 vi.mock("../../db/queries.js", () => ({
   insertThought: (...args: any[]) => mockInsertThought(...args),
@@ -54,6 +56,8 @@ vi.mock("../../db/queries.js", () => ({
   deleteThought: (...args: any[]) => mockDeleteThought(...args),
   batchInsertThoughts: (...args: any[]) => mockBatchInsertThoughts(...args),
   listDistinctTopics: (...args: any[]) => mockListDistinctTopics(...args),
+  findOpenProposal: (...args: any[]) => mockFindOpenProposal(...args),
+  listDreamRuns: (...args: any[]) => mockListDreamRuns(...args),
 }));
 
 const mockLoadProposalReview = vi.fn();
@@ -391,5 +395,38 @@ describe("GET /dream/proposals/:id", () => {
     const res = await app.request("/dream/proposals/p1", { method: "POST" });
 
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── Pending proposal on stats ──────────────────────────────────────
+
+describe("GET /stats", () => {
+  const app = createApi();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetThoughtStats.mockResolvedValue({ total: 1 });
+  });
+
+  it("reports a pending proposal, which nothing else surfaces", async () => {
+    mockFindOpenProposal.mockResolvedValue({
+      id: "p-1",
+      expires_at: "2026-08-22T09:00:00.000Z",
+      item_count: 3,
+    });
+
+    const res = await app.request("/stats");
+
+    expect(await res.json()).toMatchObject({ pending_proposal: { id: "p-1", item_count: 3 } });
+  });
+
+  it("reports null rather than omitting the field when nothing is pending", async () => {
+    // An absent field reads as "this build does not report it"; null is an
+    // answer.
+    mockFindOpenProposal.mockResolvedValue(undefined);
+
+    const res = await app.request("/stats");
+
+    expect(await res.json()).toMatchObject({ pending_proposal: null });
   });
 });

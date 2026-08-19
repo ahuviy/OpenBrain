@@ -37,6 +37,7 @@ function candidate(id: string, overrides: Partial<CandidateRow> = {}): Candidate
 }
 
 interface Recorded {
+  listedSince: Date[];
   runs: Array<{ project: string; status: string; dry_run: boolean; actions: unknown[] }>;
   changes: Array<{ id: string; topics?: string[]; people?: string[] }>;
   vocabulary: string[];
@@ -56,11 +57,14 @@ function fakePort(
   vocabulary: VocabularyFixture = {},
 ) {
   const recorded: Recorded = {
-    vocabulary: [], merges: 0, proposals: 0, watermarks: [], changes: [], runs: [],
+    vocabulary: [], merges: 0, proposals: 0, watermarks: [], changes: [], runs: [], listedSince: [],
   };
   const port: DreamPort = {
     loadWatermark: async () => new Date("2026-08-01T00:00:00Z"),
-    listCandidates: async () => rows,
+    listCandidates: async (watermark) => {
+      recorded.listedSince.push(watermark);
+      return rows;
+    },
     neighbours: async (row) => neighbourMap[row.id] ?? [],
     knownTopics: async () => ["forex"],
     vocabularyCounts: async () => vocabulary.counts ?? { topics: {}, people: {} },
@@ -363,6 +367,30 @@ describe("runDream", () => {
     expect(result.skipped.merge_contradicts ?? 0).toBe(0);
   });
 
+  it("reports a vocabulary rewrite in applied_items, both sides", async () => {
+    // applied_items was merges-only, so the operation that rewrites metadata on
+    // rows nobody reviewed left no trail at all. `applied.vocabulary` counts
+    // THOUGHTS rewritten, not tags changed — one thought whose topics and
+    // people both move is one.
+    const rows = [candidate("a", { metadata: { topics: ["fx"], people: ["Dohmen"] } })];
+    const { port } = fakePort([], {}, {
+      counts: { topics: {}, people: { Dohmen: 1, "Bert Dohmen": 5 } },
+      tagged: rows as unknown as ThoughtRow[],
+    });
+
+    const result = await runDream(port, judgeIndependent, synthesise, config, thresholds, {}, now);
+
+    expect(result.applied.vocabulary).toBe(1);
+    expect(result.applied_items).toEqual([
+      {
+        kind: "vocabulary",
+        id: "a",
+        topics: { from: ["fx"], to: ["forex"] },
+        people: { from: ["Dohmen"], to: ["Bert Dohmen"] },
+      },
+    ]);
+  });
+
   it("records what it did, not just how much", async () => {
     // The retro question is "why did it merge those two", and a count cannot
     // answer it. Every applied change and every refusal gets an entry.
@@ -430,6 +458,81 @@ describe("runDream", () => {
 
     expect(recorded.runs[0]).toMatchObject({ dry_run: true, status: "ok" });
     expect(recorded.vocabulary).toEqual([]);
+  });
+
+  it("re-examines an earlier window when asked, without rewinding the watermark", async () => {
+    // Every consolidation fix is otherwise forward-only: the thoughts that
+    // accumulated the mess sit behind the watermark and are never considered
+    // again. `since` is how a fix reaches them.
+    const rows = [candidate("a", { updated_at: new Date("2026-08-10T10:00:00Z") })];
+    const { port, recorded } = fakePort(rows, {});
+
+    await runDream(
+      port, judgeIndependent, synthesise, config, thresholds,
+      { since: "1970-01-01T00:00:00Z" }, now,
+    );
+
+    // The run looked at everything...
+    expect(recorded.listedSince).toEqual([new Date("1970-01-01T00:00:00Z")]);
+    // ...but the stored watermark is a floor: a backfill must not make the next
+    // ordinary run re-examine the whole corpus too.
+    expect(recorded.watermarks[0]!.getTime()).toBeGreaterThanOrEqual(
+      new Date("2026-08-01T00:00:00Z").getTime(),
+    );
+  });
+
+  it("reports the window it actually used", async () => {
+    const rows = [candidate("a")];
+    const { port } = fakePort(rows, {});
+
+    const result = await runDream(
+      port, judgeIndependent, synthesise, config, thresholds,
+      { since: "1970-01-01T00:00:00Z" }, now,
+    );
+
+    expect(result.watermark.from).toBe("1970-01-01T00:00:00.000Z");
+  });
+
+  it("refuses a since it cannot parse rather than silently scanning everything", async () => {
+    // A bad date coerced to epoch is a full-corpus pass nobody asked for, which
+    // on a large brain is a lot of embedding calls.
+    const { port } = fakePort([], {});
+
+    await expect(
+      runDream(port, judgeIndependent, synthesise, config, thresholds, { since: "yesterday" }, now),
+    ).rejects.toThrow(/since/i);
+  });
+
+  it("never proposes a set whose items destroy each other", async () => {
+    // Judged pairwise, a thought can be obsolete in one item and the survivor in
+    // another; accepting both archives the thought the second says to keep.
+    const rows = [candidate("a"), candidate("b")];
+    const neighbourOfA = { ...candidate("b"), similarity: 0.85 } as ThoughtRow & { similarity: number };
+    const neighbourOfB = { ...candidate("c"), similarity: 0.85 } as ThoughtRow & { similarity: number };
+    const { port } = fakePort(rows, { a: [neighbourOfA], b: [neighbourOfB] });
+
+    // Always retires the FIRST argument: pair (a,b) kills a, pair (b,c) kills b,
+    // so the second item would archive a thought the first relies on.
+    const judgeKillsFirst: JudgePair = async (first) => ({
+      verdict: "supersedes",
+      reason: "stale",
+      obsolete_id: first.id,
+    });
+
+    const result = await runDream(
+      port, judgeKillsFirst, synthesise, config, thresholds, { ops: ["contradiction"] }, now,
+    );
+
+    const archived = result.items.flatMap((item) =>
+      item.kind === "contradiction" ? [item.obsolete_id] : [],
+    );
+    const survivors = result.items.flatMap((item) =>
+      item.kind === "contradiction"
+        ? item.thoughts.filter((t) => !t.obsolete).map((t) => t.id)
+        : [],
+    );
+    expect(archived.filter((id) => survivors.includes(id))).toEqual([]);
+    expect(result.skipped.proposal_conflict).toBeGreaterThan(0);
   });
 
   it("only runs the operations it was asked for", async () => {

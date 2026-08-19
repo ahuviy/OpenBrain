@@ -19,6 +19,7 @@ import {
   countVocabulary,
   listProjects,
   insertDreamRun,
+  findOpenProposal,
   listDreamRuns,
   listThoughtsTagged,
   type ThoughtMetadata,
@@ -634,5 +635,35 @@ describe("listDreamRuns", () => {
     const [sql, params] = mockQuery.mock.calls[0]!;
     expect(sql).not.toContain("WHERE project");
     expect(params).toEqual([20]);
+  });
+});
+
+// ─── Pending proposals ──────────────────────────────────────────────
+
+describe("findOpenProposal", () => {
+  it("returns the open proposal for a project, with when it lapses", async () => {
+    // Nothing surfaced a pending proposal, so unless dream happened to be run
+    // again it expired unnoticed — and expiry is not the same as a reject.
+    const { pool, mockQuery } = createMockPool();
+    const expires = new Date("2026-08-22T09:00:00Z");
+    mockQuery.mockResolvedValue({ rows: [{ id: "p-1", expires_at: expires, item_count: 3 }] });
+
+    await expect(findOpenProposal(pool, "markets")).resolves.toEqual({
+      id: "p-1",
+      expires_at: expires,
+      item_count: 3,
+    });
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("status = 'open'");
+    expect(sql).toContain("expires_at > now()");
+    expect(params).toEqual(["markets"]);
+  });
+
+  it("returns undefined when nothing is pending", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await expect(findOpenProposal(pool, "")).resolves.toBeUndefined();
   });
 });

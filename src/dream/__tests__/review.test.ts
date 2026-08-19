@@ -12,7 +12,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { describeProposal, referencedThoughtIds, reviewItems } from "../review.js";
+import { describeProposal, referencedThoughtIds, reviewItems, vocabularyAudit } from "../review.js";
 import { keysFor, type ProposalItem } from "../proposal.js";
 import type { ThoughtRow } from "../../db/queries.js";
 
@@ -118,6 +118,31 @@ describe("describeProposal", () => {
     items: [CONTRADICTION, SYNTHESIS],
   };
 
+  it("flags a thought that appears in more than one item", () => {
+    // The set that survives the conflict drop can still mention one thought
+    // twice — legitimately — and a reviewer accepting item by item would have
+    // to diff ids across items by hand to notice.
+    const view = describeProposal(
+      { ...stored, items: [CONTRADICTION, SYNTHESIS] },
+      CORPUS,
+      new Date("2026-08-19T00:00:00Z"),
+    );
+
+    expect(view.overlaps).toEqual([
+      { id: "id-b", keys: ["contradiction:1", "synthesis:1"], obsolete_in: [] },
+    ]);
+  });
+
+  it("has no overlaps to report when each thought appears once", () => {
+    const view = describeProposal(
+      { ...stored, items: [CONTRADICTION] },
+      CORPUS,
+      new Date("2026-08-19T00:00:00Z"),
+    );
+
+    expect(view.overlaps).toEqual([]);
+  });
+
   it("renders every item and says the proposal is still actionable", () => {
     const view = describeProposal(stored, CORPUS, new Date("2026-08-19T00:00:00Z"));
 
@@ -146,5 +171,69 @@ describe("describeProposal", () => {
     );
 
     expect(view).toMatchObject({ status: "applied", actionable: false });
+  });
+});
+
+describe("reviewItems cautions", () => {
+  // A contradiction retires a WHOLE thought on the strength of one contradicted
+  // section. When the doomed thought is long and multi-topic, accepting it
+  // discards unrelated material — the July 7 digest carried rate-cut data, a
+  // breadth crack and trigger history alongside the one stale paragraph.
+  const long = "x".repeat(4000);
+
+  it("warns when the thought to archive is long enough to hold unrelated material", () => {
+    const corpus = [thought("id-a", long), thought("id-b", "short and to the point")];
+
+    const [item] = reviewItems([CONTRADICTION], corpus);
+
+    expect(item).toMatchObject({
+      caution: expect.stringContaining("unrelated"),
+    });
+  });
+
+  it("says nothing when both thoughts are short", () => {
+    const [item] = reviewItems([CONTRADICTION], CORPUS);
+
+    expect(item).not.toHaveProperty("caution");
+  });
+
+  it("says nothing about a synthesis, which archives nothing", () => {
+    const corpus = [thought("id-b", long), thought("id-c", long)];
+
+    expect(reviewItems([SYNTHESIS], corpus)[0]).not.toHaveProperty("caution");
+  });
+});
+
+describe("vocabularyAudit", () => {
+  // Vocabulary and merge apply immediately, with no proposal gate, so they are
+  // exactly the operations where an after-the-fact trail matters most. Only
+  // merges were reported; a vocabulary rewrite left `applied_items` empty.
+  it("reports what changed on which thought, from what to what", () => {
+    const before = { topics: ["market-analysis"], people: ["Bert Dohmen"] };
+
+    expect(vocabularyAudit("id-a", before, { topics: ["markets"], people: ["Dohmen"] })).toEqual({
+      kind: "vocabulary",
+      id: "id-a",
+      topics: { from: ["market-analysis"], to: ["markets"] },
+      people: { from: ["Bert Dohmen"], to: ["Dohmen"] },
+    });
+  });
+
+  it("omits the field that did not change", () => {
+    const before = { topics: ["markets"], people: ["Dohmen"] };
+
+    expect(vocabularyAudit("id-a", before, { people: ["Bert Dohmen"] })).toEqual({
+      kind: "vocabulary",
+      id: "id-a",
+      people: { from: ["Dohmen"], to: ["Bert Dohmen"] },
+    });
+  });
+
+  it("treats a thought with no prior tags as an empty list, not a missing one", () => {
+    expect(vocabularyAudit("id-a", {}, { topics: ["markets"] })).toEqual({
+      kind: "vocabulary",
+      id: "id-a",
+      topics: { from: [], to: ["markets"] },
+    });
   });
 });

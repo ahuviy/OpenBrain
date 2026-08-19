@@ -14,6 +14,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dream` now returns the proposed `items` in full, not just counts, keyed exactly
   as `dream_apply` takes them.
 
+### Added (backfill and audit)
+- `dream(since: "1970-01-01")` re-examines an earlier window, or the whole
+  corpus. Without it every consolidation improvement was forward-only and blind
+  to the thoughts that accumulated the mess — alias unification could not reach
+  the very splits that motivated it. A backfill never rewinds the stored
+  watermark, and an unparseable `since` is refused rather than coerced to the
+  epoch.
+- `applied_items` now covers vocabulary rewrites, with both sides
+  (`{from, to}`) per field. It was merges-only, so the other operation that
+  applies without a proposal gate left no audit trail.
+- Proposals are checked for internal consistency: an item that would archive a
+  thought another item depends on is dropped (`skipped.proposal_conflict`), and
+  `dream_review` reports `overlaps` — thoughts appearing in more than one item,
+  with which items would archive them.
+- A contradiction item carries a `caution` when the thought it would archive is
+  long and much larger than the one superseding it: accepting retires all of it,
+  including material unrelated to the conflict.
+- `thought_stats` (REST: `GET /stats`) reports `pending_proposal`. Nothing
+  surfaced an open proposal, so unless `dream` happened to run again it expired
+  unnoticed — and expiry is not the same as a reject.
+
+### Fixed (determinism)
+- Every LLM call is pinned to `temperature: 0` across all three providers.
+  Extraction, contradiction judgment and synthesis are decisions about given
+  text, not creative work; at the provider default the same input produced
+  different action items on different calls, including one invented from a line
+  that only said a fixture was safe to delete.
+
 ### Added (run history)
 - `dream_runs` (migration 007) records every consolidation run — counts, the
   `trigger` it came from, whether it was a dry run, and a per-action log of what

@@ -17,6 +17,7 @@
  */
 
 import { keysFor, type ProposalItem, type StoredProposal } from "./proposal.js";
+import { overlappingThoughts, type ThoughtOverlap } from "./consistency.js";
 import type { ContradictionVerdict } from "./constants.js";
 import type { ThoughtRow } from "../db/queries.js";
 
@@ -33,6 +34,31 @@ export interface ContradictionReview {
   reason: string;
   obsolete_id: string;
   thoughts: Array<ReviewThought & { obsolete: boolean }>;
+  /** Advisory, present only when accepting would retire more than the conflict. */
+  caution?: string;
+}
+
+/**
+ * A contradiction archives a WHOLE thought over one contradicted section. When
+ * the doomed thought is long, accepting it discards whatever else it held — a
+ * weekly digest retired for one stale paragraph takes its unrelated rate-cut
+ * data and incident history with it.
+ *
+ * Advisory rather than a veto: the judgment may still be right, and suppressing
+ * the item would hide a real conflict. The reviewer is the one who can tell.
+ */
+const LONG_THOUGHT_CHARS = 2000;
+
+function cautionFor(obsolete: string | null, survivor: string | null): string | undefined {
+  if (!obsolete || obsolete.length < LONG_THOUGHT_CHARS) return undefined;
+
+  const ratio = survivor && survivor.length > 0 ? obsolete.length / survivor.length : Infinity;
+  if (ratio < 2) return undefined;
+
+  return (
+    `the thought to archive is ${obsolete.length} characters, far longer than the one superseding ` +
+    `it — accepting retires all of it, including any unrelated material it holds`
+  );
 }
 
 export interface SynthesisReview {
@@ -56,7 +82,38 @@ export interface MergeAudit {
   sources: ReviewThought[];
 }
 
-export type AppliedItem = MergeAudit;
+/**
+ * A vocabulary rewrite, with both sides.
+ *
+ * Vocabulary and merge are the operations that apply with no proposal gate, so
+ * they are where an after-the-fact trail matters most — and a rewrite that only
+ * says "1 change" cannot be checked against what you expected it to do.
+ */
+export interface VocabularyAudit {
+  kind: "vocabulary";
+  id: string;
+  topics?: { from: string[]; to: string[] };
+  people?: { from: string[]; to: string[] };
+}
+
+export type AppliedItem = MergeAudit | VocabularyAudit;
+
+function tagList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+export function vocabularyAudit(
+  id: string,
+  before: Record<string, unknown>,
+  after: { topics?: string[]; people?: string[] },
+): VocabularyAudit {
+  return {
+    kind: "vocabulary",
+    id,
+    ...(after.topics ? { topics: { from: tagList(before.topics), to: after.topics } } : {}),
+    ...(after.people ? { people: { from: tagList(before.people), to: after.people } } : {}),
+  };
+}
 
 export function mergeAudit(sources: ThoughtRow[]): MergeAudit {
   return { kind: "merge", sources: sources.map((row) => ({ id: row.id, content: row.content })) };
@@ -74,6 +131,12 @@ export function reviewItems(items: ProposalItem[], thoughts: ThoughtRow[]): Revi
     const key = keys[index] ?? "";
 
     if (item.kind === "contradiction") {
+      const survivorId = item.obsolete_id === item.a ? item.b : item.a;
+      const caution = cautionFor(
+        resolve(item.obsolete_id).content,
+        resolve(survivorId).content,
+      );
+
       return {
         key,
         kind: "contradiction",
@@ -84,6 +147,7 @@ export function reviewItems(items: ProposalItem[], thoughts: ThoughtRow[]): Revi
           ...resolve(id),
           obsolete: id === item.obsolete_id,
         })),
+        ...(caution ? { caution } : {}),
       };
     }
 
@@ -112,6 +176,12 @@ export interface ProposalReview {
   /** True only when dream_apply would actually accept a call for this id. */
   actionable: boolean;
   items: ReviewItem[];
+  /**
+   * Thoughts appearing in more than one item, and which items would archive
+   * them. A reviewer accepting item by item would otherwise have to diff ids
+   * across items by hand to notice that two items disagree about one thought.
+   */
+  overlaps: ThoughtOverlap[];
 }
 
 /**
@@ -135,5 +205,6 @@ export function describeProposal(
     expires_at: proposal.expires_at.toISOString(),
     actionable: status === "open",
     items: reviewItems(proposal.items, thoughts),
+    overlaps: overlappingThoughts(proposal.items),
   };
 }

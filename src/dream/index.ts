@@ -14,10 +14,18 @@ import { buildCanonical, canMerge, type CanonicalThought } from "./ops/merge.js"
 import { planVocabularyChange, type VocabularyChange, type VocabularyConfig } from "./ops/vocabulary.js";
 import { inferAliases, type VocabularyCounts } from "./ops/aliases.js";
 import { screenMergeClusters } from "./ops/merge-guard.js";
+import { dropConflictingItems } from "./consistency.js";
 import { planContradictionItems, type JudgePair } from "./ops/contradiction.js";
 import { planSynthesisItems, type Synthesise } from "./ops/synthesis.js";
 import type { ProposalItem } from "./proposal.js";
-import { mergeAudit, referencedThoughtIds, reviewItems, type AppliedItem, type ReviewItem } from "./review.js";
+import {
+  mergeAudit,
+  referencedThoughtIds,
+  reviewItems,
+  vocabularyAudit,
+  type AppliedItem,
+  type ReviewItem,
+} from "./review.js";
 import type { DreamRunRecord, DreamRunRow, TagField, ThoughtRow } from "../db/queries.js";
 
 export interface DreamPort {
@@ -47,6 +55,15 @@ export interface DreamOptions {
   project?: string | null;
   ops?: DreamOp[];
   dry_run?: boolean;
+  /**
+   * Re-examine everything changed since this instant, instead of since the
+   * stored watermark. `1970-01-01` is a full-corpus pass.
+   *
+   * Without it every consolidation improvement is forward-only: the thoughts
+   * that accumulated the mess sit behind the watermark and are never considered
+   * again, which is most of a brain and the part most likely to need the work.
+   */
+  since?: string | Date;
   /** Where the run came from, for reading the history back: mcp, rest, schedule. */
   trigger?: string;
 }
@@ -85,6 +102,21 @@ export interface DreamResult {
   skipped: Record<string, number>;
 }
 
+/**
+ * A `since` that cannot be parsed must not become the epoch: silently scanning
+ * the whole corpus is a lot of embedding calls nobody asked for.
+ */
+function parseSince(since: string | Date | undefined): Date | undefined {
+  if (since === undefined) return undefined;
+
+  const parsed = since instanceof Date ? since : new Date(since);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`dream: since is not a valid timestamp: ${String(since)}`);
+  }
+
+  return parsed;
+}
+
 function bump(counter: Record<string, number>, key: string): void {
   counter[key] = (counter[key] ?? 0) + 1;
 }
@@ -104,11 +136,15 @@ export async function runDream(
   const dryRun = options.dry_run === true;
 
   const actions: DreamAction[] = [];
+  const appliedItems: AppliedItem[] = [];
   const applied: Record<string, number> = {};
   const proposed: Record<string, number> = {};
   const skipped: Record<string, number> = {};
 
-  const watermark = await port.loadWatermark(project);
+  // The stored watermark is loaded even for a backfill: the call takes the
+  // per-project lock, and it is the floor the saved watermark cannot go below.
+  const stored = await port.loadWatermark(project);
+  const watermark = parseSince(options.since) ?? stored;
   const candidates = await port.listCandidates(watermark, project);
 
   const byId = new Map<string, ThoughtRow>();
@@ -156,6 +192,7 @@ export async function runDream(
       const change = planVocabularyChange(row, knownTopics, effective);
       if (!change) continue;
       bump(applied, "vocabulary");
+      appliedItems.push(vocabularyAudit(change.id, row.metadata as Record<string, unknown>, change));
       actions.push({
         kind: "vocabulary",
         id: change.id,
@@ -169,7 +206,6 @@ export async function runDream(
   const mergeClusters = clusterByEdges(edges, thresholds.merge);
   const mergedIds = new Set<string>();
   const items: ProposalItem[] = [];
-  const appliedItems: AppliedItem[] = [];
 
   if (ops.includes("merge")) {
     const compatible: ThoughtRow[][] = [];
@@ -252,6 +288,25 @@ export async function runDream(
     }
   }
 
+  // Judged pairwise, items can contradict each other: a thought obsolete in one
+  // and the survivor in another. Accepting both archives the thought the second
+  // relies on, and a reviewer working item by item cannot see it.
+  const consistent = dropConflictingItems(items);
+  if (consistent.dropped.length > 0) {
+    skipped.proposal_conflict = consistent.dropped.length;
+    for (const dropped of consistent.dropped) {
+      actions.push({
+        kind: "merge_blocked",
+        a: dropped.kind === "contradiction" ? dropped.a : "",
+        b: dropped.kind === "contradiction" ? dropped.b : "",
+        reason: "proposal_conflict",
+        detail: "another item in this proposal depends on a thought this one would archive",
+      });
+    }
+  }
+  items.length = 0;
+  items.push(...consistent.items);
+
   let proposalId: string | null = null;
   if (items.length > 0 && !dryRun) {
     proposalId = await port.saveProposal(project, items);
@@ -262,12 +317,15 @@ export async function runDream(
     actions.push({ kind: "proposed", key: item.key, item_kind: item.kind });
   }
 
-  const advanced = nextWatermark(candidates, watermark, runStartedAt, thresholds.watermarkSlackMs);
+  // `stored`, not `watermark`: a backfill re-reads old rows, and passing its
+  // window here would rewind the watermark and make every later run re-examine
+  // the whole corpus.
+  const advanced = nextWatermark(candidates, stored, runStartedAt, thresholds.watermarkSlackMs);
   // Thoughts left in a proposal are not settled: marking them so would stop the
   // next run selecting them, and nothing could then regenerate the items.
   const heldIds = new Set(referencedThoughtIds(items));
   const held = candidates.filter((row) => heldIds.has(row.id));
-  const settled = holdBackWatermark(advanced, held, watermark);
+  const settled = holdBackWatermark(advanced, held, stored);
   if (!dryRun) {
     await port.saveWatermark(project, settled, { applied, proposed, skipped });
   }
