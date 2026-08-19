@@ -209,5 +209,6 @@ and that "what does this preserve?" belongs in the design template rather than i
 - [x] Docs consolidated to one source of truth — addresses three-way testing-doc drift
 - [ ] **Open, needs owner:** `pforge-sdk` was removed with the test that used it; if Plan-Forge is
       revived, the hallmark round-trip test needs restoring — pre-existing, outside this feature
-- [ ] **Open, needs owner:** the `docker` CI job fails on `ghcr.io/srnichols/OpenBrain` — repository
-      names must be lowercase. Pre-existing, unrelated, and it keeps CI red regardless of this work
+- [x] The `docker` CI job failed on `ghcr.io/<owner>/OpenBrain` — registry names must be lowercase,
+      but `github.repository` preserves the repo's casing. Fixed by lowercasing the whole slug, which
+      holds for any owner and any fork. Pre-existing; it had failed on every run since the fork

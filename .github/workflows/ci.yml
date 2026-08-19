@@ -108,14 +108,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A registry name must be lowercase, but github.repository preserves the
+      # repo's own casing — "ahuviy/OpenBrain" here — so using it verbatim fails
+      # every build with "repository name must be lowercase". Lowercasing the
+      # whole slug fixes it for any owner and any fork, not just this one.
+      - name: Compute image name
+        id: image
+        run: |
+          echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
 
   # Deploys the committed tree, which is the point: `fly deploy` from a laptop
   # ships the working directory, so uncommitted or half-written files reach
