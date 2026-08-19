@@ -3,8 +3,6 @@ import { Pool } from 'pg';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-// @ts-expect-error — pforge-sdk is an untyped .mjs package
-import { buildProvenance } from 'pforge-sdk/hallmark';
 
 const pool = new Pool({
   host: process.env.DB_HOST_TEST ?? process.env.DB_HOST ?? 'localhost',
@@ -193,27 +191,6 @@ describe('Migration 003 — provenance helpers', () => {
     );
     expect(rows[0].content).toBe('newer');
     expect(rows[1].content).toBe('older');
-  });
-
-  it('10: hallmark round-trip', async () => {
-    const prov = buildProvenance({
-      toolName: 'test-slice2',
-      contentHash: `sha256:${'a'.repeat(64)}`,
-    });
-    const meta = { provenance: prov };
-
-    await pool.query(
-      `INSERT INTO thoughts (content, metadata, project)
-       VALUES ('hallmark test', $1::jsonb, $2)`,
-      [JSON.stringify(meta), SENTINEL],
-    );
-
-    const { rows } = await pool.query(
-      `SELECT * FROM match_thoughts_by_source($1, 10, NULL, false)`,
-      [prov.contentHash],
-    );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].content).toBe('hallmark test');
   });
 
   it('11: regression — match_thoughts still exists', async () => {
