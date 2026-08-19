@@ -22,7 +22,7 @@ param dbPassword string
 param mcpAccessKey string
 
 @description('OpenBrain container image')
-param containerImage string = 'ghcr.io/srnichols/openbrain:latest'
+param containerImage string = 'ghcr.io/ahuviy/openbrain:latest'
 
 @description('PostgreSQL SKU name')
 param postgresSku string = 'Standard_B1ms'
@@ -220,10 +220,13 @@ resource caApp 'Microsoft.App/containerApps@2024-03-01' = {
         transport: 'http'
         allowInsecure: false
       }
+      // The default image is PUBLIC, so ghcrPassword can be left empty and the
+      // pull happens anonymously. Supply it only when pointing containerImage at
+      // a private registry.
       registries: empty(ghcrPassword) ? [] : [
         {
           server: 'ghcr.io'
-          username: 'srnichols'
+          username: 'ahuviy'
           passwordSecretRef: 'ghcr-password'
         }
       ]

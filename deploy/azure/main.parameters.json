@@ -12,7 +12,7 @@
       "value": ""
     },
     "containerImage": {
-      "value": "ghcr.io/srnichols/openbrain:latest"
+      "value": "ghcr.io/ahuviy/openbrain:latest"
     },
     "postgresSku": {
       "value": "Standard_B1ms"

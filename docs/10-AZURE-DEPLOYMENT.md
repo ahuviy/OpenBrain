@@ -74,7 +74,7 @@ cd OpenBrain
 | `-ResourceGroup` | Yes | — | Azure resource group name |
 | `-Location` | No | `eastus2` | Azure region |
 | `-SubscriptionId` | No | Current | Azure subscription ID |
-| `-ContainerImage` | No | `ghcr.io/srnichols/openbrain:latest` | Container image to deploy |
+| `-ContainerImage` | No | `ghcr.io/ahuviy/openbrain:latest` | Container image to deploy |
 
 ### Example with All Parameters
 
@@ -83,7 +83,7 @@ cd OpenBrain
   -ResourceGroup rg-openbrain `
   -Location westus3 `
   -SubscriptionId "12345678-1234-1234-1234-123456789abc" `
-  -ContainerImage "ghcr.io/srnichols/openbrain:v1.0.0"
+  -ContainerImage "ghcr.io/ahuviy/openbrain:v1.0.0"
 ```
 
 ---

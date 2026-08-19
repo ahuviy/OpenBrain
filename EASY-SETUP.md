@@ -250,7 +250,7 @@ Follow docs/10-AZURE-DEPLOYMENT.md exactly.
    - Resource group name (default: rg-openbrain)
    - Region (default: eastus2)
    - Subscription ID (default: current)
-   - Container image (default: ghcr.io/srnichols/openbrain:latest)
+   - Container image (default: ghcr.io/ahuviy/openbrain:latest)
 
 3. Run the deploy script:
      .\deploy\azure\deploy.ps1 -ResourceGroup <rg> -Location <region> ...

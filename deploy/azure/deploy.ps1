@@ -31,7 +31,7 @@ param(
 
     [string]$SubscriptionId,
 
-    [string]$ContainerImage = "ghcr.io/srnichols/openbrain:latest"
+    [string]$ContainerImage = "ghcr.io/ahuviy/openbrain:latest"
 )
 
 Set-StrictMode -Version Latest
