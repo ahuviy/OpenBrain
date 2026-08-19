@@ -7,7 +7,7 @@
 import { getSearchThreshold } from "./search-config.js";
 import { runDream } from "../dream/index.js";
 import { applyProposal } from "../dream/proposal.js";
-import { createApplyPort, createDreamPort } from "../dream/port.js";
+import { createApplyPort, createDreamPort, loadProposalReview } from "../dream/port.js";
 import { getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
 import type { DreamOp } from "../dream/constants.js";
 import { Hono } from "hono";
@@ -614,6 +614,22 @@ export function createApi(): Hono {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[api] Dream failed:", message);
       return c.json({ error: "Dream failed", detail: message }, 500);
+    }
+  });
+
+  // GET, not POST: reading a proposal changes nothing, and dream_apply is the
+  // only call that should ever close one.
+  app.get("/dream/proposals/:id", async (c) => {
+    try {
+      const review = await loadProposalReview(pool, c.req.param("id"), new Date());
+      if (!review) {
+        return c.json({ error: "Proposal not found" }, 404);
+      }
+      return c.json(review);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[api] Dream review failed:", message);
+      return c.json({ error: "Dream review failed", detail: message }, 500);
     }
   });
 

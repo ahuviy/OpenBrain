@@ -14,6 +14,7 @@ import {
   insertMergedThought,
   insertProposal,
   listCandidatesSince,
+  listThoughtsByIds,
   loadProposal,
   lockDreamState,
   mergeThoughtMetadata,
@@ -31,6 +32,7 @@ import type { CanonicalThought } from "./ops/merge.js";
 import { buildSynthesisMetadata } from "./ops/synthesis.js";
 import type { VocabularyChange } from "./ops/vocabulary.js";
 import type { ApplyPort, ProposalItem, StoredProposal } from "./proposal.js";
+import { describeProposal, referencedThoughtIds, type ProposalReview } from "./review.js";
 import type { ProposalStatus } from "./constants.js";
 
 const EPOCH = new Date(0);
@@ -105,6 +107,33 @@ export function createDreamPort(pool: pg.Pool, embedder: Embedder, ttlHours: num
       }
     },
   };
+}
+
+/**
+ * Reads a stored proposal back for review, without touching it.
+ *
+ * dream_apply closes a proposal whichever way it is called, so review had to be
+ * a separate read: a caller that cannot see the items before deciding is not
+ * reviewing them. Undefined for an unknown id — the caller decides whether that
+ * is a 404 or an error message.
+ */
+export async function loadProposalReview(
+  pool: pg.Pool,
+  id: string,
+  now: Date,
+): Promise<ProposalReview | undefined> {
+  const row = await loadProposal(pool, id);
+  if (!row) return undefined;
+
+  const items = row.items as ProposalItem[];
+  const stored: StoredProposal = {
+    id: row.id,
+    status: row.status,
+    expires_at: row.expires_at,
+    items,
+  };
+
+  return describeProposal(stored, await listThoughtsByIds(pool, referencedThoughtIds(items)), now);
 }
 
 export function createApplyPort(pool: pg.Pool, embedder: Embedder): ApplyPort {

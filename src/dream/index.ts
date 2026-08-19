@@ -15,6 +15,7 @@ import { planVocabularyChange, type VocabularyChange, type VocabularyConfig } fr
 import { planContradictionItems, type JudgePair } from "./ops/contradiction.js";
 import { planSynthesisItems, type Synthesise } from "./ops/synthesis.js";
 import type { ProposalItem } from "./proposal.js";
+import { reviewItems, type ReviewItem } from "./review.js";
 import type { ThoughtRow } from "../db/queries.js";
 
 export interface DreamPort {
@@ -46,6 +47,12 @@ export interface DreamResult {
   applied: Record<string, number>;
   proposed: Record<string, number>;
   proposal_id: string | null;
+  /**
+   * The proposed items in full, keyed as dream_apply takes them. Counts alone
+   * left a caller two moves, both bad: accept thoughts it had never read, or
+   * reject them by omission — a proposal is reviewed exactly once.
+   */
+  items: ReviewItem[];
   watermark: { from: string; to: string };
   candidates: number;
   clusters: number;
@@ -160,6 +167,9 @@ export async function runDream(
     applied,
     proposed,
     proposal_id: proposalId,
+    // byId holds every row this run clustered, which is exactly the set the
+    // items refer to — no second fetch, and none of it is re-embedded.
+    items: reviewItems(items, [...byId.values()]),
     watermark: { from: watermark.toISOString(), to: advanced.toISOString() },
     candidates: candidates.length,
     clusters: mergeClusters.length,

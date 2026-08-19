@@ -312,8 +312,12 @@ them together.
 
 Two tiers. **Vocabulary and merges apply immediately** — both are deterministic and reversible via
 `archived` + `supersedes`. **Contradictions and syntheses are proposed**, never applied: those are a
-model's judgment, and a wrong one silently archives a true thought. They come back as a
-`proposal_id` for `dream_apply`.
+model's judgment, and a wrong one silently archives a true thought. They come back in `items` — each
+with its key, the thoughts involved, and what applying it would change — alongside a `proposal_id`
+for `dream_apply`. Read the items; accepting a key you have not read archives a thought nobody saw.
+
+One project per run. A bare call consolidates only thoughts with **no** project, so each project
+needs its own call — `thought_stats` lists them.
 
 Runs are incremental. Each run looks at thoughts changed since the last run plus their nearest
 neighbours, so an old thought is still merged when a new one duplicates it, without re-judging the
@@ -321,7 +325,7 @@ settled corpus. The first run on an unconsolidated brain processes everything �
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `project` | string | Consolidate one project. Omit for thoughts with no project |
+| `project` | string | Consolidate one project. Omit for thoughts with no project — this does not cover every project |
 | `ops` | string[] | Any of `vocabulary`, `merge`, `contradiction`, `synthesis`. Defaults to all four |
 | `dry_run` | boolean | Report what would change, write nothing (default: false) |
 
@@ -330,6 +334,19 @@ settled corpus. The first run on an unconsolidated brain processes everything �
   "applied":  { "vocabulary": 12, "merge": 4 },
   "proposed": { "contradiction": 2, "synthesis": 3 },
   "proposal_id": "0f9c…",
+  "items": [
+    {
+      "key": "contradiction:1",
+      "kind": "contradiction",
+      "verdict": "contradicts",
+      "reason": "the second reverses the first",
+      "obsolete_id": "a1b2…",
+      "thoughts": [
+        { "id": "a1b2…", "content": "We use MySQL.", "obsolete": true },
+        { "id": "c3d4…", "content": "We moved off MySQL to Postgres.", "obsolete": false }
+      ]
+    }
+  ],
   "watermark": { "from": "2026-08-11T09:00:00.000Z", "to": "2026-08-17T23:59:00.000Z" },
   "candidates": 37,
   "clusters": 8,
@@ -340,6 +357,31 @@ settled corpus. The first run on an unconsolidated brain processes everything �
 A cluster whose thoughts disagree on project, author, or import origin is skipped rather than merged
 — a merge writes one row and archives the rest, so any disagreement would be silently collapsed onto
 one source's value.
+
+### `dream_review`
+
+Read a proposal back without deciding anything — every item with its key, the thoughts behind it,
+and what applying it would change. `dream_apply` closes a proposal whichever way it is called, so a
+proposal whose items you have not seen (a run from an earlier session, or one someone else started)
+has to be read first.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `proposal_id` | string | The `proposal_id` returned by `dream` |
+
+```json
+{
+  "proposal_id": "0f9c…",
+  "status": "open",
+  "expires_at": "2026-08-22T09:00:00.000Z",
+  "actionable": true,
+  "items": [ "…same shape as the dream response…" ]
+}
+```
+
+`status` reports `expired` once the TTL has passed even while the stored row still says `open` —
+expiry is enforced by `dream_apply` on the call that finds the proposal stale, so a review that
+reported `open` would promise a call that then throws. `actionable` is the field to branch on.
 
 ### `dream_apply`
 
@@ -356,7 +398,8 @@ Proposals expire (`DREAM_PROPOSAL_TTL_HOURS`, default 72h) and an expired one is
 { "applied": ["contradiction:1"], "rejected": ["synthesis:1"], "status": "applied" }
 ```
 
-Both tools have REST twins: `POST /dream` and `POST /dream/apply`, same bodies, same responses.
+All three have REST twins: `POST /dream`, `GET /dream/proposals/:id`, and `POST /dream/apply` — same
+shapes, same responses. The review twin is a GET because reading a proposal changes nothing.
 
 ### `thought_stats`
 

@@ -116,6 +116,43 @@ describe("runDream", () => {
     expect(result.applied.vocabulary).toBe(1);
   });
 
+  it("returns the proposed items with their bodies, keyed as dream_apply takes them", async () => {
+    // Counts alone made a proposal unreviewable: the caller had to accept
+    // thoughts it had never read, or reject them by omission.
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.85 } as ThoughtRow & { similarity: number };
+    const { port } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(port, judgeContradicts, synthesise, config, thresholds, {}, now);
+
+    expect(result.items).toEqual([
+      {
+        key: "contradiction:1",
+        kind: "contradiction",
+        verdict: "contradicts",
+        reason: "clash",
+        obsolete_id: "a",
+        thoughts: [
+          { id: "a", content: "content a", obsolete: true },
+          { id: "b", content: "content b", obsolete: false },
+        ],
+      },
+    ]);
+  });
+
+  it("returns the items on a dry run too, when nothing was stored to review later", async () => {
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.85 } as ThoughtRow & { similarity: number };
+    const { port } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(
+      port, judgeContradicts, synthesise, config, thresholds, { dry_run: true }, now,
+    );
+
+    expect(result.proposal_id).toBeNull();
+    expect(result.items.map((item) => item.key)).toEqual(["contradiction:1"]);
+  });
+
   it("only runs the operations it was asked for", async () => {
     const rows = [candidate("a", { metadata: { topics: ["fx"] } })];
     const other = { ...candidate("b"), similarity: 0.85 } as ThoughtRow & { similarity: number };

@@ -15,6 +15,7 @@ import {
   updateThought,
   deleteThought,
   batchInsertThoughts,
+  listThoughtsByIds,
   type ThoughtMetadata,
 } from "../queries.js";
 
@@ -434,5 +435,31 @@ describe("hybridSearchThoughts", () => {
     mockQuery.mockRejectedValueOnce(Object.assign(new Error("connection refused"), { code: "08006" }));
 
     await expect(hybridSearchThoughts(pool, [0.1], "x")).rejects.toThrow("connection refused");
+  });
+});
+
+// ─── listThoughtsByIds ──────────────────────────────────────────────
+
+describe("listThoughtsByIds", () => {
+  it("fetches by id array in one query, archived rows included", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [{ id: "id-a", content: "a" }] });
+
+    const rows = await listThoughtsByIds(pool, ["id-a", "id-b"]);
+
+    expect(rows).toHaveLength(1);
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("= ANY($1::uuid[])");
+    // Archived is NOT filtered: a proposal that archived a thought must still
+    // render it when the review comes back to look at what it did.
+    expect(sql).not.toContain("archived = false");
+    expect(params).toEqual([["id-a", "id-b"]]);
+  });
+
+  it("does not hit the database for an empty id list", async () => {
+    const { pool, mockQuery } = createMockPool();
+
+    await expect(listThoughtsByIds(pool, [])).resolves.toEqual([]);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });

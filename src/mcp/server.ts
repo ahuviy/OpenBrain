@@ -95,7 +95,7 @@ export function toBatchBody(args: Record<string, unknown>): Record<string, unkno
 
 import { runDream } from "../dream/index.js";
 import { applyProposal } from "../dream/proposal.js";
-import { createApplyPort, createDreamPort } from "../dream/port.js";
+import { createApplyPort, createDreamPort, loadProposalReview } from "../dream/port.js";
 import { getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
 import { DREAM_OPS, type DreamOp } from "../dream/constants.js";
 
@@ -284,13 +284,15 @@ export function createMcpServer(): Server {
         name: "dream",
         description:
           "Consolidate the brain. Merges near-duplicates the write path let through, normalises topic and people vocabulary, and PROPOSES the judgment calls (contradictions, cluster summaries) for you to review.\n\n" +
-          "Vocabulary and merges apply immediately and are reversible. Contradictions and syntheses are returned as a proposal_id — nothing is archived until you call dream_apply. Use dry_run first on a brain you have not consolidated before.",
+          "Vocabulary and merges apply immediately and are reversible. Contradictions and syntheses come back in `items` — each with its key, the thoughts involved, and what would change — plus a proposal_id. Nothing is archived until you call dream_apply. Use dry_run first on a brain you have not consolidated before.\n\n" +
+          "Consolidates ONE project at a time: a bare call covers only thoughts with no project, so project-scoped thoughts need a call each. Read the project list from thought_stats.",
         inputSchema: {
           type: "object" as const,
           properties: {
             project: {
               type: "string",
-              description: "Consolidate one project. Omit for thoughts with no project.",
+              description:
+                "Consolidate one project. Omit to consolidate thoughts with no project — omitting it does NOT cover every project.",
             },
             ops: {
               type: "array",
@@ -321,6 +323,19 @@ export function createMcpServer(): Server {
             },
           },
           required: ["proposal_id", "accept"],
+        },
+      },
+      {
+        name: "dream_review",
+        description:
+          "Read a dream proposal without deciding anything: every item with its key, the thoughts behind it, and what applying it would change.\n\n" +
+          "Use this before dream_apply on any proposal whose items you have not already seen in a dream response — dream_apply closes the proposal whichever way you call it.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            proposal_id: { type: "string", description: "The proposal_id returned by dream" },
+          },
+          required: ["proposal_id"],
         },
       },
       {
@@ -696,6 +711,20 @@ export function createMcpServer(): Server {
 
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
+
+        // ── dream_review ──
+        case "dream_review": {
+          const proposal_id = args?.proposal_id as string;
+          const review = await loadProposalReview(pool, proposal_id, new Date());
+
+          if (!review) {
+            throw new Error(`dream_review: proposal not found ${proposal_id}`);
+          }
+
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(review, null, 2) }],
           };
         }
 

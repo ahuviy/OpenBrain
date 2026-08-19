@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `dream_review` (REST: `GET /dream/proposals/:id`) reads a proposal back without
+  deciding anything — every item with its key, the thoughts behind it, and what
+  applying it would change. `dream_apply` closes a proposal whichever way it is
+  called, so a proposal whose items were never seen had no safe move.
+- `dream` now returns the proposed `items` in full, not just counts, keyed exactly
+  as `dream_apply` takes them.
+
+### Fixed
+- Knex migrations (004+) are applied at startup. Nothing on the hosted path ever
+  ran them — no release command, no entrypoint step — so production was missing
+  every table from migration 004 onward, and `dream` failed with
+  `relation "dream_state" does not exist`. They run in the background: blocking
+  the port on a migration fails the platform health check on every cold boot.
+  This makes backwards/forwards compatibility a standing rule for migrations —
+  expand, deploy, contract.
+
+### Changed
+- `dream`'s description states that one run covers one project, and that a bare
+  call covers only thoughts with no project.
+
 ## [0.7.4] - 2026-05-18
 
 ### Added

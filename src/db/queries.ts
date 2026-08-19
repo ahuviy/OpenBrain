@@ -588,6 +588,26 @@ export async function listCandidatesSince(
 }
 
 /**
+ * Fetches thoughts by id, for rendering a dream proposal a caller has to review.
+ *
+ * Archived rows are deliberately included. A proposal that has already been
+ * applied archived one side of each contradiction it accepted, and a review
+ * that dropped those rows would show the reader half of what it did.
+ */
+export async function listThoughtsByIds(pool: pg.Pool, ids: string[]): Promise<ThoughtRow[]> {
+  if (ids.length === 0) return [];
+
+  const { rows } = await pool.query<ThoughtRow>(
+    `SELECT id, content, metadata, project, created_by, archived, supersedes, created_at, updated_at
+     FROM thoughts
+     WHERE id = ANY($1::uuid[])`,
+    [ids]
+  );
+
+  return rows;
+}
+
+/**
  * Loads the watermark and takes a row lock for the duration of the run, so two
  * concurrent dreams on one project cannot both consolidate the same candidates.
  * Locks one row of a per-project table, never `thoughts`.

@@ -163,6 +163,21 @@ here — it has drifted once already.
 4. Add unit tests.
 5. Document the dimension in the README provider table and `AGENTS.md` above.
 
+### Deploying this fork
+
+**Never run `fly deploy` by hand.** Pushing to `master` is the deploy: the `deploy` job in
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs `flyctl deploy . --config
+deploy/hosted/fly/fly.toml --app openbrain-ahuvi --remote-only` after the build, unit and
+integration-db gates pass, then polls `/health?deep=1` until it reports healthy. It is serialized on
+a concurrency group, because two deploys racing for the one machine can leave a release
+half-applied — a manual deploy alongside a CI one is exactly that race. Re-deploy the current
+master with a manual `workflow_dispatch` run, not an empty commit and not a local deploy.
+
+If you ever do need a local deploy, run it from the **repo root** with an explicit context:
+`fly deploy . -c deploy/hosted/fly/fly.toml -a openbrain-ahuvi --dockerfile Dockerfile`. Running it
+from `deploy/hosted/fly/` makes that directory the build context and every `COPY` in the Dockerfile
+fails with "not found".
+
 ### When adding a new deployment path
 
 Don't, unless you've talked to the maintainer. Five paths is already a lot to keep tested. Prefer extending an existing path's docs.
