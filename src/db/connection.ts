@@ -5,6 +5,8 @@
 
 import pg from "pg";
 
+import { runMigrations } from "./migrate.js";
+
 const { Pool } = pg;
 
 let pool: pg.Pool | null = null;
@@ -37,7 +39,19 @@ export function getPool(): pg.Pool {
   return pool;
 }
 
+/**
+ * Brings the schema up to date, then proves the pool can talk to it.
+ *
+ * Migrations run here rather than in a platform release command because every
+ * deploy target boots through this function and only one of them (Azure) had a
+ * migration step at all — which is how production ran without the dream tables
+ * migration 006 creates. Startup fails loudly if a migration fails: serving MCP
+ * traffic against a half-migrated schema turns one clear error into many
+ * confusing ones.
+ */
 export async function initializeDatabase(): Promise<void> {
+  await runMigrations();
+
   const db = getPool();
   const client = await db.connect();
   try {

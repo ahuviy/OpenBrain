@@ -51,6 +51,9 @@ All four of these have **pgvector built in** and a free tier that fits a persona
    > ⚠️ **Change `vector(768)` to `vector(1536)`** at the top of `init.sql` if you're using OpenRouter (`text-embedding-3-small`). Keep `768` if you'll point at a local Ollama. You **cannot** change vector dimensions after the table exists without recreating it.
 
 5. Apply the migrations in [`db/migrations/`](../db/migrations/) in order, same way.
+
+   > The knex migrations (`db/knex-migrations/`, 004 onward) do **not** need to be pasted — the app applies any pending ones itself on startup. The DB user in your connection string therefore needs DDL rights on `public`; the Supabase `postgres` user has them.
+
 6. **Settings → Database → Connection string → URI**. Copy it. It looks like:
 
    ```
