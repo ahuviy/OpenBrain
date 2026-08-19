@@ -56,6 +56,14 @@ vi.mock("../../db/queries.js", () => ({
   listDistinctTopics: (...args: any[]) => mockListDistinctTopics(...args),
 }));
 
+const mockLoadProposalReview = vi.fn();
+
+vi.mock("../../dream/port.js", () => ({
+  createDreamPort: () => ({}),
+  createApplyPort: () => ({}),
+  loadProposalReview: (...args: any[]) => mockLoadProposalReview(...args),
+}));
+
 import { createApi } from "../routes.js";
 
 describe("REST API Routes", () => {
@@ -333,5 +341,55 @@ describe("REST API Routes", () => {
     expect(mockGetThoughtStats).toHaveBeenCalled();
     const callArgs = mockGetThoughtStats.mock.calls[0]!;
     expect(callArgs[1]).toBe("plan-forge");
+  });
+});
+
+// ─── Dream review ───────────────────────────────────────────────────
+
+describe("GET /dream/proposals/:id", () => {
+  const app = createApi();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the rendered proposal", async () => {
+    mockLoadProposalReview.mockResolvedValue({
+      proposal_id: "p1",
+      status: "open",
+      expires_at: "2026-08-22T09:00:00.000Z",
+      actionable: true,
+      items: [{ key: "contradiction:1" }],
+    });
+
+    const res = await app.request("/dream/proposals/p1");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ proposal_id: "p1", actionable: true });
+    expect(mockLoadProposalReview.mock.calls[0]?.[1]).toBe("p1");
+  });
+
+  it("404s on an id that is not a proposal, rather than 500", async () => {
+    mockLoadProposalReview.mockResolvedValue(undefined);
+
+    const res = await app.request("/dream/proposals/nope");
+
+    expect(res.status).toBe(404);
+  });
+
+  it("does not close or modify the proposal it reads", async () => {
+    // The whole point of a separate review call: dream_apply closes a proposal
+    // whichever way it is called, so reading one must not go through it.
+    mockLoadProposalReview.mockResolvedValue({
+      proposal_id: "p1",
+      status: "open",
+      expires_at: "2026-08-22T09:00:00.000Z",
+      actionable: true,
+      items: [],
+    });
+
+    const res = await app.request("/dream/proposals/p1", { method: "POST" });
+
+    expect(res.status).toBe(404);
   });
 });

@@ -8,7 +8,9 @@
  * what the process cwd is, and that it releases its connection either way.
  */
 
+import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { describe, it, expect, vi } from "vitest";
 
@@ -80,5 +82,54 @@ describe("runMigrations", () => {
 
     await expect(runMigrations(factory)).rejects.toThrow("locked");
     expect(destroy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("knexfile.cjs parity", () => {
+  // The CLI path (`npm run db:migrate`, and scripts/prepare-database.js behind
+  // it) reads knexfile.cjs, while the app reads migrationConfig(). Two copies of
+  // one connection means a database that migrates from a laptop and not from the
+  // app, or the reverse — the failure is a missing relation at runtime, far from
+  // the edit that caused it.
+  const require = createRequire(import.meta.url);
+
+  function knexfile(): Record<string, any> {
+    const path = resolve(__dirname, "../../../knexfile.cjs");
+    delete require.cache[require.resolve(path)];
+    return require(path) as Record<string, any>;
+  }
+
+  it("connects to the same database the CLI migrates", () => {
+    vi.stubEnv("DB_HOST", "db.example");
+    vi.stubEnv("DB_PORT", "6543");
+    vi.stubEnv("DB_NAME", "brain");
+    vi.stubEnv("DB_USER", "reader");
+    vi.stubEnv("DB_PASSWORD", "secret");
+    vi.stubEnv("DB_SSL", "true");
+    try {
+      expect(migrationConfig().connection).toEqual(knexfile().connection);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("defaults identically when nothing is configured", () => {
+    for (const key of ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_SSL"]) {
+      vi.stubEnv(key, "");
+      vi.unstubAllEnvs();
+    }
+    expect(migrationConfig().connection).toEqual(knexfile().connection);
+    expect(migrationConfig().client).toBe(knexfile().client);
+  });
+
+  it("applies the same migrations, tracked in the same table", () => {
+    const theirs = knexfile().migrations;
+    const ours = migrationConfig().migrations!;
+
+    expect(ours.tableName).toBe(theirs.tableName);
+    expect(ours.loadExtensions).toEqual(theirs.loadExtensions);
+    // knexfile's path is relative to the repo root it is run from; ours is
+    // absolute by design. Compare what they resolve to, not how they spell it.
+    expect(resolve(__dirname, "../../..", theirs.directory as string)).toBe(ours.directory);
   });
 });
