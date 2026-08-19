@@ -93,6 +93,12 @@ export function toBatchBody(args: Record<string, unknown>): Record<string, unkno
   return body;
 }
 
+import { runDream } from "../dream/index.js";
+import { applyProposal } from "../dream/proposal.js";
+import { createApplyPort, createDreamPort } from "../dream/port.js";
+import { getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
+import { DREAM_OPS, type DreamOp } from "../dream/constants.js";
+
 export function createMcpServer(): Server {
   const server = new Server(
     { name: "open-brain", version: "1.0.0" },
@@ -272,6 +278,49 @@ export function createMcpServer(): Server {
             },
           },
           required: ["content"],
+        },
+      },
+      {
+        name: "dream",
+        description:
+          "Consolidate the brain. Merges near-duplicates the write path let through, normalises topic and people vocabulary, and PROPOSES the judgment calls (contradictions, cluster summaries) for you to review.\n\n" +
+          "Vocabulary and merges apply immediately and are reversible. Contradictions and syntheses are returned as a proposal_id — nothing is archived until you call dream_apply. Use dry_run first on a brain you have not consolidated before.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            project: {
+              type: "string",
+              description: "Consolidate one project. Omit for thoughts with no project.",
+            },
+            ops: {
+              type: "array",
+              items: { type: "string", enum: [...DREAM_OPS] },
+              description: "Which operations to run. Defaults to all four.",
+            },
+            dry_run: {
+              type: "boolean",
+              description: "Report what would change without writing anything.",
+              default: false,
+            },
+          },
+        },
+      },
+      {
+        name: "dream_apply",
+        description:
+          "Apply the items you accept from a dream proposal. Anything not listed in `accept` is rejected, and the proposal closes either way — a proposal is reviewed exactly once.\n\n" +
+          "Item keys come from the dream response, e.g. \"contradiction:1\", \"synthesis:2\".",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            proposal_id: { type: "string", description: "The proposal_id returned by dream" },
+            accept: {
+              type: "array",
+              items: { type: "string" },
+              description: 'Item keys to apply, e.g. ["contradiction:1"]. Empty rejects everything.',
+            },
+          },
+          required: ["proposal_id", "accept"],
         },
       },
       {
@@ -602,6 +651,52 @@ export function createMcpServer(): Server {
           });
 
           return { content: captureContent };
+        }
+
+        // ── dream ──
+        case "dream": {
+          const project = args?.project as string | undefined;
+          const ops = args?.ops as DreamOp[] | undefined;
+          const dry_run = args?.dry_run === true;
+
+          const thresholds = getDreamThresholds();
+          const discipline = getDisciplineConfig();
+          const port = createDreamPort(pool, embedder, getProposalTtlHours());
+
+          const result = await runDream(
+            port,
+            (a, b) => embedder.judgeContradiction({ id: a.id, content: a.content }, { id: b.id, content: b.content }),
+            (contents) => embedder.synthesise(contents),
+            {
+              topicAliases: discipline.topicAliases,
+              personAliases: discipline.personAliases,
+              selfNames: discipline.selfNames,
+            },
+            thresholds,
+            { project: project ?? "", ops, dry_run },
+            () => new Date(),
+          );
+
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
+
+        // ── dream_apply ──
+        case "dream_apply": {
+          const proposal_id = args?.proposal_id as string;
+          const accept = (args?.accept as string[] | undefined) ?? [];
+
+          const result = await applyProposal(
+            createApplyPort(pool, embedder),
+            proposal_id,
+            accept,
+            new Date(),
+          );
+
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
         }
 
         // ── thought_stats ──

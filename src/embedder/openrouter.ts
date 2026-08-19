@@ -4,6 +4,11 @@
  */
 
 import {
+  CONTRADICTION_PROMPT,
+  SYNTHESIS_PROMPT,
+  judgePayload,
+  type JudgeInput,
+  type ContradictionJudgment,
   type Embedder,
   type ThoughtMetadataExtracted,
   DEFAULT_METADATA,
@@ -93,5 +98,47 @@ export class OpenRouterEmbedder implements Embedder {
       console.warn("[embedder] Failed to parse metadata JSON:", e);
       return DEFAULT_METADATA;
     }
+  }
+
+  private async chat(system: string, user: string, json: boolean): Promise<string> {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: this.llmModel,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        ...(json ? { response_format: { type: "json_object" } } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter chat failed: ${response.status}`);
+    }
+
+    const data = (await response.json()) as { choices: Array<{ message: { content: string } }> };
+    return data?.choices?.[0]?.message?.content ?? "";
+  }
+
+  /**
+   * Unlike extractMetadata, a failure here THROWS rather than returning a
+   * default. A default verdict is still a verdict, and dream would act on it —
+   * the caller skips the pair instead when the provider cannot answer.
+   */
+  async judgeContradiction(a: JudgeInput, b: JudgeInput): Promise<ContradictionJudgment> {
+    const raw = await this.chat(CONTRADICTION_PROMPT, judgePayload(a, b), true);
+    if (raw.trim().length === 0) {
+      throw new Error("contradiction judgment came back empty");
+    }
+    return JSON.parse(raw) as ContradictionJudgment;
+  }
+
+  async synthesise(contents: string[]): Promise<string> {
+    return this.chat(SYNTHESIS_PROMPT, contents.join("\n\n---\n\n"), false);
   }
 }

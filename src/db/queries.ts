@@ -546,3 +546,196 @@ export async function listDistinctTopics(
 
   return rows.map((r) => r.topic);
 }
+
+// ─── Dream: consolidation state, candidates, proposals ───────────────
+
+/** `ThoughtRow` plus the column the watermark needs. Not folded into
+ *  `ThoughtRow` — widening that would ripple through every existing consumer
+ *  for the benefit of one caller. */
+export interface CandidateRow extends ThoughtRow {
+  updated_at: Date;
+}
+
+export interface DreamStateRow {
+  project: string;
+  watermark: Date;
+  last_run_at: Date;
+}
+
+/**
+ * Rows changed since the watermark. Archived rows are excluded: a merge archives
+ * its sources, and re-selecting them would re-cluster what was just consolidated.
+ */
+export async function listCandidatesSince(
+  pool: pg.Pool,
+  watermark: Date,
+  project: string,
+  limit: number = 500
+): Promise<CandidateRow[]> {
+  const { rows } = await pool.query<CandidateRow>(
+    `SELECT id, content, metadata, project, created_by, archived, supersedes, created_at, updated_at
+     FROM thoughts
+     WHERE updated_at > $1
+       AND archived = false
+       AND embedding IS NOT NULL
+       AND COALESCE(project, '') = $2
+     ORDER BY updated_at ASC
+     LIMIT $3`,
+    [watermark, project, limit]
+  );
+
+  return rows;
+}
+
+/**
+ * Loads the watermark and takes a row lock for the duration of the run, so two
+ * concurrent dreams on one project cannot both consolidate the same candidates.
+ * Locks one row of a per-project table, never `thoughts`.
+ */
+export async function lockDreamState(
+  client: pg.PoolClient,
+  project: string,
+  epoch: Date
+): Promise<DreamStateRow> {
+  const { rows } = await client.query<DreamStateRow>(
+    `INSERT INTO dream_state (project, watermark)
+     VALUES ($1, $2)
+     ON CONFLICT (project) DO UPDATE SET project = EXCLUDED.project
+     RETURNING project, watermark, last_run_at`,
+    [project, epoch]
+  );
+
+  const { rows: locked } = await client.query<DreamStateRow>(
+    `SELECT project, watermark, last_run_at FROM dream_state WHERE project = $1 FOR UPDATE`,
+    [project]
+  );
+
+  return locked[0] ?? rows[0]!;
+}
+
+export async function saveDreamState(
+  client: pg.PoolClient,
+  project: string,
+  watermark: Date,
+  stats: Record<string, unknown>
+): Promise<void> {
+  await client.query(
+    `UPDATE dream_state
+     SET watermark = $2, last_run_at = now(), last_run_stats = $3::jsonb
+     WHERE project = $1`,
+    [project, watermark, JSON.stringify(stats)]
+  );
+}
+
+/** Writes the canonical row and archives its sources in one transaction: a
+ *  canonical whose sources are still live would double every search result. */
+export async function insertMergedThought(
+  client: pg.PoolClient,
+  content: string,
+  embedding: number[],
+  metadata: ThoughtMetadata,
+  project: string | null,
+  created_by: string | null,
+  supersedes: string,
+  sourceIds: string[]
+): Promise<ThoughtRow> {
+  const { rows } = await client.query<ThoughtRow>(
+    `INSERT INTO thoughts (content, embedding, metadata, project, created_by, supersedes)
+     VALUES ($1, $2::vector, $3::jsonb, $4, $5, $6)
+     RETURNING id, content, metadata, project, created_by, archived, supersedes, created_at`,
+    [content, `[${embedding.join(",")}]`, JSON.stringify(metadata), project, created_by, supersedes]
+  );
+
+  await client.query(`UPDATE thoughts SET archived = true WHERE id = ANY($1::uuid[])`, [sourceIds]);
+
+  return rows[0]!;
+}
+
+export async function archiveThought(client: pg.PoolClient, id: string): Promise<void> {
+  await client.query(`UPDATE thoughts SET archived = true WHERE id = $1`, [id]);
+}
+
+export async function setSupersedes(
+  client: pg.PoolClient,
+  id: string,
+  supersedes: string
+): Promise<void> {
+  await client.query(`UPDATE thoughts SET supersedes = $2 WHERE id = $1`, [id, supersedes]);
+}
+
+/**
+ * Merges keys into `metadata` rather than replacing it: the vocabulary sweep
+ * owns `topics` and `people` and must not clobber `source` or `provenance`.
+ */
+export async function mergeThoughtMetadata(
+  pool: pg.Pool,
+  id: string,
+  patch: Record<string, unknown>
+): Promise<void> {
+  await pool.query(`UPDATE thoughts SET metadata = metadata || $2::jsonb WHERE id = $1`, [
+    id,
+    JSON.stringify(patch),
+  ]);
+}
+
+export interface ProposalRow {
+  id: string;
+  project: string;
+  created_at: Date;
+  expires_at: Date;
+  status: string;
+  items: unknown[];
+}
+
+/** Supersedes any open proposal for the project first — the UNIQUE partial
+ *  index allows exactly one, and a stale plan must not block a fresh run. */
+export async function insertProposal(
+  pool: pg.Pool,
+  project: string,
+  items: unknown[],
+  ttlHours: number
+): Promise<ProposalRow> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE dream_proposals SET status = 'superseded' WHERE project = $1 AND status = 'open'`,
+      [project]
+    );
+    const { rows } = await client.query<ProposalRow>(
+      `INSERT INTO dream_proposals (project, expires_at, items)
+       VALUES ($1, now() + ($2 || ' hours')::interval, $3::jsonb)
+       RETURNING id, project, created_at, expires_at, status, items`,
+      [project, String(ttlHours), JSON.stringify(items)]
+    );
+    await client.query("COMMIT");
+    return rows[0]!;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function loadProposal(pool: pg.Pool, id: string): Promise<ProposalRow | undefined> {
+  const { rows } = await pool.query<ProposalRow>(
+    `SELECT id, project, created_at, expires_at, status, items FROM dream_proposals WHERE id = $1`,
+    [id]
+  );
+
+  return rows[0];
+}
+
+export async function setProposalStatus(
+  client: pg.PoolClient,
+  id: string,
+  status: string
+): Promise<void> {
+  await client.query(
+    `UPDATE dream_proposals
+     SET status = $2, applied_at = CASE WHEN $2 = 'applied' THEN now() ELSE applied_at END
+     WHERE id = $1`,
+    [id, status]
+  );
+}

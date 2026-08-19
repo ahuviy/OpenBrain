@@ -4,6 +4,12 @@
  * /memories/:id (PUT, DELETE), /stats endpoints.
  */
 
+import { getSearchThreshold } from "./search-config.js";
+import { runDream } from "../dream/index.js";
+import { applyProposal } from "../dream/proposal.js";
+import { createApplyPort, createDreamPort } from "../dream/port.js";
+import { getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
+import type { DreamOp } from "../dream/constants.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -362,7 +368,7 @@ export function createApi(): Hono {
           pool,
           queryEmbedding,
           body.limit ?? 10,
-          body.threshold ?? 0.5,
+          body.threshold ?? getSearchThreshold(),
           filter,
           body.project,
           body.include_archived,
@@ -388,7 +394,7 @@ export function createApi(): Hono {
         queryEmbedding,
         body.query,
         body.limit ?? 10,
-        body.threshold ?? 0.5,
+        body.threshold ?? getSearchThreshold(),
         filter,
         body.project,
         body.include_archived,
@@ -578,6 +584,58 @@ export function createApi(): Hono {
         { error: "Failed to get stats", detail: message },
         500
       );
+    }
+  });
+
+  // Dream has a REST twin of each MCP tool: the rules must bind on every
+  // transport, so neither port owns any dream logic.
+  app.post("/dream", async (c) => {
+    try {
+      const body = await c.req.json<{ project?: string; ops?: DreamOp[]; dry_run?: boolean }>();
+      const discipline = getDisciplineConfig();
+      const port = createDreamPort(pool, embedder, getProposalTtlHours());
+
+      const result = await runDream(
+        port,
+        (a, b) => embedder.judgeContradiction({ id: a.id, content: a.content }, { id: b.id, content: b.content }),
+        (contents) => embedder.synthesise(contents),
+        {
+          topicAliases: discipline.topicAliases,
+          personAliases: discipline.personAliases,
+          selfNames: discipline.selfNames,
+        },
+        getDreamThresholds(),
+        { project: body.project ?? "", ops: body.ops, dry_run: body.dry_run === true },
+        () => new Date(),
+      );
+
+      return c.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[api] Dream failed:", message);
+      return c.json({ error: "Dream failed", detail: message }, 500);
+    }
+  });
+
+  app.post("/dream/apply", async (c) => {
+    try {
+      const body = await c.req.json<{ proposal_id?: string; accept?: string[] }>();
+      if (!body.proposal_id) {
+        return c.json({ error: "proposal_id is required" }, 400);
+      }
+
+      const result = await applyProposal(
+        createApplyPort(pool, embedder),
+        body.proposal_id,
+        body.accept ?? [],
+        new Date(),
+      );
+
+      return c.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[api] Dream apply failed:", message);
+      return c.json({ error: "Dream apply failed", detail: message }, 500);
     }
   });
 

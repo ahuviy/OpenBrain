@@ -26,7 +26,7 @@ vi.mock("../../embedder/index.js", () => ({
 import { createMcpServer } from "../server.js";
 
 describe("MCP Server Tool Listing", () => {
-  it("registers exactly 7 tools", async () => {
+  it("registers exactly 9 tools", async () => {
     const server = createMcpServer();
 
     // Access tools via the server's internal handler
@@ -35,17 +35,44 @@ describe("MCP Server Tool Listing", () => {
     expect(handler).toBeDefined();
 
     const result = await handler({ method: "tools/list" });
-    expect(result.tools).toHaveLength(7);
+    expect(result.tools).toHaveLength(9);
 
     const toolNames = result.tools.map((t: any) => t.name).sort();
     expect(toolNames).toEqual([
       "capture_thought",
       "capture_thoughts",
       "delete_thought",
+      "dream",
+      "dream_apply",
       "list_thoughts",
       "search_thoughts",
       "thought_stats",
       "update_thought",
+    ]);
+  });
+
+  it("dream_apply requires the proposal it is applying", async () => {
+    const server = createMcpServer();
+    const handler = (server as any)._requestHandlers?.get("tools/list");
+    const result = await handler({ method: "tools/list" });
+
+    const apply = result.tools.find((t: any) => t.name === "dream_apply");
+
+    expect(apply.inputSchema.required).toEqual(["proposal_id", "accept"]);
+  });
+
+  it("dream exposes exactly the four known operations", async () => {
+    const server = createMcpServer();
+    const handler = (server as any)._requestHandlers?.get("tools/list");
+    const result = await handler({ method: "tools/list" });
+
+    const dream = result.tools.find((t: any) => t.name === "dream");
+
+    expect(dream.inputSchema.properties.ops.items.enum).toEqual([
+      "vocabulary",
+      "merge",
+      "contradiction",
+      "synthesis",
     ]);
   });
 
