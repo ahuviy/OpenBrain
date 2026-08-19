@@ -1,10 +1,10 @@
 # Open Brain
 
-[![CI](https://github.com/srnichols/OpenBrain/actions/workflows/ci.yml/badge.svg)](https://github.com/srnichols/OpenBrain/actions/workflows/ci.yml)
+[![CI](https://github.com/ahuviy/OpenBrain/actions/workflows/ci.yml/badge.svg)](https://github.com/ahuviy/OpenBrain/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![MCP](https://img.shields.io/badge/MCP-7_tools-8A2BE2)](https://modelcontextprotocol.io/)
+[![MCP](https://img.shields.io/badge/MCP-9_tools-8A2BE2)](https://modelcontextprotocol.io/)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-purple)](https://srnichols.github.io/OpenBrain/)
 
 **Persistent, searchable memory for every AI tool you use — solo or as a small team.**
