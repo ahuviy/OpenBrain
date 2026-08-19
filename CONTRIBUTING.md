@@ -57,19 +57,39 @@ See [01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md) for the full system architectu
 
 ```
 src/
-├── index.ts              # Entry point — REST + MCP servers
+├── index.ts                 # Entry point — REST + MCP servers
 ├── api/
-│   └── routes.ts         # Hono REST API (8 routes)
+│   ├── routes.ts            # Hono REST API (11 routes)
+│   └── search-config.ts     # Configurable search threshold default
 ├── mcp/
-│   └── server.ts         # MCP server (7 tools)
+│   ├── server.ts            # MCP server (9 tools)
+│   └── http-app.ts          # MCP-over-HTTP + OAuth
+├── capture/                 # Write-path enforcement, shared by both transports
+│   ├── discipline.ts        # type / people / topics / project rules (pure)
+│   ├── dedupe.ts            # pre-write duplicate detection (pure)
+│   └── vocabulary.ts        # cached topic vocabulary
+├── dream/                   # Retrospective consolidation
+│   ├── index.ts             # The run — tiering behind a DreamPort seam
+│   ├── port.ts              # The pg-backed DreamPort
+│   ├── candidates.ts        # Watermark and run scoping
+│   ├── proposal.ts          # Proposal keys, partitioning, apply
+│   ├── cluster.ts           # Connected components over similarity pairs
+│   └── ops/                 # vocabulary, merge, contradiction, synthesis (pure)
 ├── db/
-│   ├── connection.ts     # PostgreSQL pool (singleton)
-│   └── queries.ts        # Parameterized SQL queries (7 functions)
-└── embedder/
-    ├── types.ts           # Embedder interface + 13 thought types
-    ├── index.ts           # Provider factory
-    ├── ollama.ts          # Ollama provider
-    └── openrouter.ts      # OpenRouter provider
+│   ├── connection.ts        # PostgreSQL pool (singleton)
+│   └── queries.ts           # Parameterized SQL (20 functions) — ALL SQL lives here
+├── embedder/                # Provider-agnostic embedder interface
+│   ├── types.ts             # Embedder interface + 13 thought types
+│   ├── index.ts             # Provider factory (EMBEDDER_PROVIDER)
+│   ├── ollama.ts, openrouter.ts, azure-openai.ts
+├── integration-suites/      # Contract suites run against >1 implementation
+└── __integration__/         # Integration tests + their harness
+
+scripts/                     # Test orchestration + the fake embedder
+db/
+├── init.sql                 # Base schema (vector dim varies by deploy)
+├── migrations/              # 001-003, pre-knex, applied in order
+└── knex-migrations/         # 004+, tracked in knex_migrations
 ```
 
 ## Coding Conventions
@@ -94,37 +114,98 @@ chore(deps): update vitest to 4.2
 
 ## Testing
 
-### Unit Tests
-
-- **Framework**: Vitest
-- **Run**: `npm test`
-- **Pattern**: Unit tests with mocked pg pool and embedder
-- **Location**: `src/**/__tests__/*.test.ts`
-
-All new features must include unit tests. All existing tests must continue to pass.
-
-### Integration Tests
-
-- **Run**: `npm run test:integration`
-- **Requires**: A running Open Brain server (local or remote)
-- **Location**: `src/__integration__/*.test.ts`
-- **Coverage**: 27 tests — full CRUD lifecycle, validation, filtering, created_by
-
-Set `OPENBRAIN_API_URL` to point at your deployment:
+Two commands cover everything:
 
 ```bash
-# Local Docker Compose
-OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
-
-# K8s via port-forward
-kubectl port-forward -n openbrain svc/openbrain-api 8000:8000
-OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
-
-# Remote
-OPENBRAIN_API_URL=https://your-host npm run test:integration
+npm test          # unit only — fast, no dependencies (alias: npm run test:unit)
+npm run test:all  # every suite, provisioning what it needs
 ```
 
-Integration tests auto-clean up all created test data. They are excluded from `npm test` to keep the unit test run fast.
+`test:all` starts a throwaway Postgres, applies the schema, builds, boots a fake embedder and the
+app, runs all five suites, and tears down **only what it started** — a database you were already
+running is reused and left alone. Without Docker it runs the unit tests and exits non-zero, saying
+why.
+
+### The suites
+
+| Suite | Command | Needs |
+|-------|---------|-------|
+| Unit | `npm test` | nothing |
+| DreamPort contract | `npm run test:db` | Postgres |
+| Provenance helpers | `npm run test:provenance` | Postgres |
+| MCP + OAuth | `npm run test:mcp` | nothing (builds the app in-process) |
+| REST API | `npm run test:api` | Postgres + a running server |
+
+Unit tests live beside their code in `src/**/__tests__/`; the rest in `src/__integration__/`.
+Integration tests are excluded from `npm test` so the unit run stays fast, and they **skip** rather
+than fail when no database is reachable — "you didn't start Docker" is not a defect, and a suite
+that reds for that reason is one people learn to ignore.
+
+Use **fakes, not mocks**. The codebase injects narrow function types (`SimilaritySearch`,
+`JudgePair`, `Synthesise`) rather than mocking modules, so a unit test exercises real code paths.
+
+### Running a suite by hand
+
+The individual commands assume a prepared database, and `test:api` also assumes a running app:
+
+```bash
+npm run db:up && npm run db:prepare   # throwaway Postgres on :55432, full schema
+DB_PORT=55432 DB_PASSWORD=testonly npm run test:db
+npm run db:down
+```
+
+Against a deployment you already have, `test:api` takes any URL:
+
+```bash
+OPENBRAIN_API_URL=https://your-host npm run test:api
+```
+
+It creates and deletes real data. Fine on a dev box, not something to point at a shared brain.
+
+### Contract suites
+
+`src/integration-suites/` holds assertions that an *implementation* must satisfy, exported as a
+function taking a driver. `dream-port-contract.suite.ts` runs twice: against the in-memory fake in
+the unit suite, and against real Postgres in the integration suite.
+
+The fake exists so unit tests are fast. The shared suite exists so the fake cannot quietly drift
+from the database it stands in for — a fake that drifts turns every unit test above it into a test
+of a fiction. Add an assertion and both must satisfy it.
+
+### The fake embedder
+
+The API suite needs a live server, which needs an embedder. `scripts/fake-embedder-server.mjs`
+speaks Ollama's wire format, so the app under test is unmodified — same `OllamaEmbedder`, same
+routes, real Postgres. Only the model is fake. No test-only provider ships in `src/embedder/`.
+
+Its vectors are hashed character trigrams: lexical, not semantic. `indexing` and `indexes` overlap;
+`car` and `automobile` do not. Two settings make that workable, and both narrow what is proven:
+
+- `OPENBRAIN_REQUIRE_SPECIFIC_TYPE=false` — the fake types everything as the catch-all, which
+  capture discipline rejects by design. That gate has its own unit tests.
+- `OPENBRAIN_SEARCH_THRESHOLD=0.15` — trigram similarity runs far below a real embedder's.
+
+So the suites prove the retrieval **path** — capture, embed, store, search, rank, update, delete —
+end to end against real Postgres. They do **not** prove embedding quality. Nothing automated does.
+
+### What CI runs
+
+Everything above except a live-deployment API run: the `integration-db` job provisions Postgres as a
+service container and calls the same two scripts `test:all` does.
+
+| Script | Does |
+|--------|------|
+| `scripts/prepare-database.js` | `init.sql`, legacy `001-003`, knex `004+`, then verifies the schema landed |
+| `scripts/run-integration-tests.js` | every integration suite, owning the fake embedder and app processes |
+| `scripts/test-all.js` | the above plus provisioning a database — local only |
+
+One implementation of "how the suites run", rather than one in YAML and one on a laptop drifting
+apart. CI steps name their test files explicitly instead of globbing `src/__integration__`, so a new
+test cannot silently join CI without someone deciding what it needs to run against.
+
+Migrations `001-003` predate knex and are untracked by it, so the schema chain applies all three
+layers in order. Skipping the legacy layer leaves migration 003's provenance helpers absent and the
+provenance suite fails with a confusing "column does not exist".
 
 ## Pull Request Process
 

@@ -79,9 +79,16 @@ src/
     azure-openai.ts       Azure OpenAI implementation
     index.ts              Factory: picks one based on EMBEDDER_PROVIDER
   mcp/server.ts           MCP tool definitions
+  dream/                  Retrospective consolidation (see docs/plans/*-dream-*.md)
+    index.ts              The run; data access sits behind a DreamPort seam
+    port.ts               The pg-backed DreamPort
+    ops/                  vocabulary, merge, contradiction, synthesis (pure)
+  integration-suites/     Contract suites run against more than one implementation
+scripts/                  Test orchestration (JS, not YAML) + the fake embedder
 db/
   init.sql                Initial schema (vector column dim varies by deploy)
-  migrations/             Applied in alphanumeric order
+  migrations/             001-003, pre-knex, applied in order by prepare-database.js
+  knex-migrations/        004+, tracked in knex_migrations; `npm run db:migrate`
 deploy/
   devbox/                 Docker Desktop compose (Win/Mac)
   hosted/{fly,render,railway}/    PaaS templates
@@ -101,11 +108,28 @@ src/*/__tests__/          Vitest unit tests
 
 ```bash
 npm install
-npm run build              # tsc → dist/
-npm test                   # unit tests (vitest.config.ts)
-OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
-# integration suite is 27 tests — full CRUD + provenance + filtering
+npm run build              # tsc -> dist/
+npm test                   # unit only, fast, no dependencies
+npm run test:all           # every suite: provisions Postgres, fake embedder, app
+npm run typecheck          # tsc --noEmit (stricter than build: it includes tests)
 ```
+
+`npm test` and `npm run build` can both pass while `npm run typecheck` fails — the build config
+excludes test files. Check all three before claiming a change is clean.
+
+**Document what is stable, never what a test run prints.** Which suite covers what, and what it
+needs, stays true. Test counts, timings and pass tallies rot immediately and turn every doc into a
+lie the next time someone adds a test.
+
+**Probe a containerised Postgres over TCP, never `docker exec pg_isready`.** The official image runs
+a temporary server on the unix socket to execute initdb, then stops it and restarts for real. An
+in-container probe passes against that temporary server and the next command dies with "server
+closed the connection unexpectedly" — an intermittent CI failure. `scripts/test-all.js` shows the
+TCP probe.
+
+Which suite covers what, how the contract suites work, and what the fake
+embedder does and does not prove: [CONTRIBUTING.md](CONTRIBUTING.md#testing). Do not duplicate that
+here — it has drifted once already.
 
 ### Conventions
 
@@ -113,6 +137,15 @@ OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
 - **All SQL parameterized.** Never string-concatenate user input. The codebase has zero raw-SQL injection sites; keep it that way.
 - **Provider abstraction.** Anything that talks to an LLM/embedder goes through `src/embedder/types.ts`. Don't sprinkle provider-specific calls elsewhere.
 - **Errors at boundaries only.** Validate at HTTP/MCP entry points; internal helpers trust their inputs.
+- **Never write a production edit and its test in the same step.** Write the test, watch it fail for
+  the right reason, then implement. Batching several files into one edit is where this discipline
+  breaks — not complexity.
+- **Run every command a document contains before shipping the document.** A snippet that has never
+  been executed is untested code with better formatting; `sed` alternation and `psql` readiness have
+  both shipped broken here.
+- **When rewriting a record, state what you preserve, not just what you write.** A field you do not
+  mention is a field you drop — that is how a merge silently discarded the `provenance` an importer
+  matches on. See `docs/retros/2026-08-19-dream-consolidation-retro.md`.
 - **Write rules belong on the server, not in a prompt.** Anything that keeps the brain clean (dedupe, type discipline, tag vocabulary) goes in `src/capture/` so it binds on every transport — a phone client cannot run a hook or a checklist. Tool descriptions restate the rules for the model; they never substitute for them.
 - **No new direct deps without justification.** This codebase intentionally has few dependencies. Prefer std lib + `pg` + the MCP SDK.
 - **Tests live next to code** (`src/foo/__tests__/foo.test.ts`), except integration tests which live in `src/__integration__/`.

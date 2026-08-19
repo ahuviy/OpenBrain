@@ -200,11 +200,11 @@ curl http://localhost:8000/health
 curl http://localhost:8080/health
 # {"status":"healthy","service":"open-brain-mcp"}
 
-# Run the full 27-test integration suite
-OPENBRAIN_API_URL=http://localhost:8000 npm run test:integration
+# Exercise every REST endpoint against the running stack
+OPENBRAIN_API_URL=http://localhost:8000 npm run test:api
 ```
 
-The integration test suite runs 27 tests covering every endpoint — capture, batch, search, list, stats, update, delete — including `created_by` filtering, validation errors, and a full lifecycle test. All test data is auto-cleaned after the run.
+That covers every endpoint — capture, batch, search, list, stats, update, delete — including `created_by` filtering, validation errors, and a full lifecycle test. All test data is auto-cleaned after the run. To run every suite instead, see [Testing](#testing).
 
 If anything fails, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). For what to do once it's working, see [docs/13-FIRST-HOUR.md](docs/13-FIRST-HOUR.md).
 
@@ -226,6 +226,20 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
 Restart Claude Code. You now have persistent memory across all sessions.
 
 ---
+
+## Testing
+
+```bash
+npm test          # unit only — fast, no dependencies
+npm run test:all  # every suite, provisioning a database, fake embedder and app
+```
+
+Suites: unit, DreamPort contract, provenance helpers, MCP + OAuth, and the REST API against a live
+server. Integration suites skip rather than fail when no database is reachable, so `npm test`
+stays green without Docker.
+
+Full detail — what each suite covers, the contract-suite pattern, the fake embedder and what it does
+and does not prove — is in [CONTRIBUTING.md](CONTRIBUTING.md#testing).
 
 ## MCP Tools
 
@@ -289,6 +303,61 @@ Browse and filter thoughts by type, topic, person, project, or time range.
 | `project` | string | Scope to a specific project |
 | `include_archived` | boolean | Include archived thoughts (default: false) |
 | `created_by` | string | Filter to thoughts by a specific user |
+
+### `dream`
+
+Retrospective consolidation. `dedupe` guards the write path; `dream` handles what accumulates anyway
+— near-duplicates that landed just under the write threshold, topic and people vocabulary written
+before an alias existed, thoughts that contradict each other, and clusters with no statement tying
+them together.
+
+Two tiers. **Vocabulary and merges apply immediately** — both are deterministic and reversible via
+`archived` + `supersedes`. **Contradictions and syntheses are proposed**, never applied: those are a
+model's judgment, and a wrong one silently archives a true thought. They come back as a
+`proposal_id` for `dream_apply`.
+
+Runs are incremental. Each run looks at thoughts changed since the last run plus their nearest
+neighbours, so an old thought is still merged when a new one duplicates it, without re-judging the
+settled corpus. The first run on an unconsolidated brain processes everything — use `dry_run` first.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `project` | string | Consolidate one project. Omit for thoughts with no project |
+| `ops` | string[] | Any of `vocabulary`, `merge`, `contradiction`, `synthesis`. Defaults to all four |
+| `dry_run` | boolean | Report what would change, write nothing (default: false) |
+
+```json
+{
+  "applied":  { "vocabulary": 12, "merge": 4 },
+  "proposed": { "contradiction": 2, "synthesis": 3 },
+  "proposal_id": "0f9c…",
+  "watermark": { "from": "2026-08-11T09:00:00.000Z", "to": "2026-08-17T23:59:00.000Z" },
+  "candidates": 37,
+  "clusters": 8,
+  "skipped": { "merge_incompatible_sources": 1 }
+}
+```
+
+A cluster whose thoughts disagree on project, author, or import origin is skipped rather than merged
+— a merge writes one row and archives the rest, so any disagreement would be silently collapsed onto
+one source's value.
+
+### `dream_apply`
+
+Apply the items you accept from a proposal. Anything not listed is rejected, and the proposal closes
+either way: a proposal is reviewed exactly once, because the corpus moves underneath a stored plan.
+Proposals expire (`DREAM_PROPOSAL_TTL_HOURS`, default 72h) and an expired one is refused.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `proposal_id` | string | The `proposal_id` returned by `dream` |
+| `accept` | string[] | Item keys to apply, e.g. `["contradiction:1"]`. Empty rejects everything |
+
+```json
+{ "applied": ["contradiction:1"], "rejected": ["synthesis:1"], "status": "applied" }
+```
+
+Both tools have REST twins: `POST /dream` and `POST /dream/apply`, same bodies, same responses.
 
 ### `thought_stats`
 
@@ -1046,36 +1115,8 @@ See [09-SELF-HOSTED-K8S.md](docs/09-SELF-HOSTED-K8S.md) for the full deployment 
 
 ## Project Structure
 
-```
-OpenBrain/
-├── src/
-│   ├── index.ts              # Entry point — starts REST + MCP servers
-│   ├── api/
-│   │   └── routes.ts         # Hono REST API routes
-│   ├── mcp/
-│   │   └── server.ts         # MCP server with 7 tools
-│   ├── db/
-│   │   ├── connection.ts     # PostgreSQL connection pool
-│   │   └── queries.ts        # Dapper-style SQL queries
-│   └── embedder/
-│       ├── index.ts           # Embedder factory (ollama/openrouter)
-│       ├── ollama.ts          # Ollama embedding + metadata extraction
-│       ├── openrouter.ts      # OpenRouter embedding + metadata extraction
-│       └── types.ts           # Shared types
-├── db/
-│   └── init.sql              # Database schema (pgvector, HNSW index, match function)
-├── k8s/                       # Kubernetes manifests
-├── config/
-│   └── settings.yaml         # Default configuration
-├── Dockerfile                 # Multi-stage build (~60MB image)
-├── docker-compose.yml         # Local development stack
-├── .env.example               # Environment variable template
-├── package.json
-├── tsconfig.json
-└── 00-09 *.md                 # Architecture and planning docs
-```
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md#project-structure) for the annotated source tree, and
+[docs/01-ARCHITECTURE.md](docs/01-ARCHITECTURE.md) for system architecture and data flows.
 
 ## Development
 

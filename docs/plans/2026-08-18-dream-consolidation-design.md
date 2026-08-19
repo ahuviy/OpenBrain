@@ -140,11 +140,20 @@ dream(project?, ops?, dry_run?)
   4 cluster                 connected components over the pair graph
   5 auto ops                vocabulary, merge          -> applied in a transaction
   6 propose ops             contradiction, synthesis   -> dream_proposals row
-  7 advance watermark       to the max(updated_at) observed in step 2, not now()
+  7 advance watermark       min(max observed updated_at, runStart - slack)
 ```
 
-Step 7 uses the observed maximum, not wall-clock: a thought written *during* the run would
-otherwise be skipped forever. If step 2 returned nothing, the watermark is left unchanged.
+Step 7 is bounded from both sides. Wall-clock `now()` would skip a thought written during the run.
+But the observed maximum is unsafe too: `set_updated_at` stamps `updated_at` when the statement
+runs, not when its transaction commits, so a write stamped *before* the run's snapshot can commit
+*after* it — invisible to this run, yet below a watermark taken from what this run could see, and
+therefore never selected again.
+
+The watermark is therefore capped at a **commit horizon**: the run's start less a slack window
+covering the longest transaction expected in flight (`DREAM_WATERMARK_SLACK_MS`, default 60s).
+Anything at or after the horizon stays eligible next run. The cost is re-examining a few rows, which
+is safe because every operation is idempotent (§9). If step 2 returned nothing, the watermark is
+left unchanged, and it never moves backwards.
 
 ## 6. Operation specifications
 
@@ -467,8 +476,27 @@ These are deliberately absent from every section above.
 | `src/dream/__tests__/*.test.ts` | new — unit tests per §13 |
 | `src/dream/__tests__/fake-embedder.ts` | new — fake with forced-error fields |
 | `src/__integration__/dream.test.ts` | new — integration tests per §13 |
-| `.env.example` | add `DREAM_MERGE_THRESHOLD`, `DREAM_NEIGHBOUR_THRESHOLD`, `DREAM_PROPOSAL_TTL_HOURS` |
+| `.env.example` | add `DREAM_MERGE_THRESHOLD`, `DREAM_NEIGHBOUR_THRESHOLD`, `DREAM_PROPOSAL_TTL_HOURS`, `DREAM_WATERMARK_SLACK_MS` |
 | `README.md` | document both tools |
+
+## 15a. Corrections from code review (2026-08-18)
+
+Applied after review of the first implementation slice; the sections above reflect them:
+
+- **§6.2** — `buildCanonical` must carry `metadata.source` and `metadata.provenance` from the
+  earliest source that has them. `searchThoughtsBySource` matches importers on exactly those fields,
+  so dropping them makes a merged import invisible to its own importer, which re-creates the
+  originals and undoes the merge on every subsequent run.
+- **§6.2** — merging is refused outright for a cluster whose sources disagree on `project`,
+  `created_by`, or import origin (`canMerge`). A merge writes one row and archives the rest, so any
+  disagreement is silently collapsed onto the earliest source's value.
+- **§6.2** — the type tie-break resolves to the type the *earliest source* carries. A single pass
+  keeping `>` awards whichever type reaches the max count first, which agrees only for two-way ties.
+- **§4.1** — `dream_proposals.project` is `NOT NULL DEFAULT ''`, matching `dream_state`. A raw NULL
+  is invisible to `WHERE project = ''`, defeating the open-proposal lookup.
+- **§4.1** — the partial index is **UNIQUE**. Two open proposals for one project would let
+  `dream_apply` resolve an item key against whichever row it picks.
+- **§4.2 / §7** — the verdict set is declared once, in `src/embedder/types.ts`, and re-exported.
 
 ## 16. Open questions
 
