@@ -80,6 +80,21 @@ describe("runScheduledDream", () => {
     expect(notify.mock.calls[0]![0].message).toContain("p-1");
   });
 
+  it("reports what it refused to do, not just what it did", async () => {
+    // With contradiction off, a merge the judge blocked leaves no proposal and
+    // no applied change — `skipped` is the only trace, and a notification
+    // without it says "nothing happened" about a real finding.
+    const notify = vi.fn(async (_notification: Notification) => undefined);
+
+    await runScheduledDream(deps({
+      listProjects: async () => ["markets"],
+      notify,
+      dream: async () => result({ skipped: { merge_contradicts: 2 } }),
+    }));
+
+    expect(notify.mock.calls[0]![0].message).toContain("merge_contradicts 2");
+  });
+
   it("keeps going when one project fails, and reports which", async () => {
     // One bad project must not cost the others their consolidation: the next
     // run is two days away.
@@ -160,7 +175,14 @@ describe("runScheduledDream", () => {
     }));
 
     expect(outcome.runs).toEqual([
-      { project: "markets", applied: { merge: 1 }, proposed: {}, proposal_id: null, candidates: 4 },
+      {
+        project: "markets",
+        applied: { merge: 1 },
+        proposed: {},
+        skipped: {},
+        proposal_id: null,
+        candidates: 4,
+      },
     ]);
     expect(outcome.failures).toEqual([]);
   });

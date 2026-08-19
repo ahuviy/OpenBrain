@@ -318,8 +318,11 @@ a wrong one silently archives a true thought.
 A merge is applied only once the contradiction judge has cleared the cluster. Similarity alone
 cannot tell agreement from negation — "deploys must go through the pipeline" and "deploys are done
 from a laptop" differ by a few tokens and sit above the merge threshold — so the pairs most in need
-of review were the ones skipping it. Anything the judge refuses is proposed instead, and anything it
-cannot judge is left alone and counted in `skipped.merge_unscreened`. That costs one judgment per
+of review were the ones skipping it. Anything the judge refuses is refused as a merge either
+way; whether it becomes a proposal follows `ops`. With `contradiction` enabled it is proposed; with
+it disabled the merge is still blocked and the finding is counted in `skipped.merge_contradicts`,
+because a caller who is not reviewing proposals should not accumulate one that pins the watermark
+forever. Anything the judge cannot judge is left alone and counted in `skipped.merge_unscreened`. That costs one judgment per
 merge cluster, where merge used to be free.
 
 The vocabulary pass folds **spelling** variants on its own: `Market Analysis` into `market-analysis`,
@@ -388,9 +391,10 @@ exits non-zero if any project failed while still consolidating the rest.
 
 [`.github/workflows/dream.yml`](.github/workflows/dream.yml) runs it every two days against the
 deployed Fly machine (Fly's own schedules are only hourly/daily/weekly/monthly). Set `DREAM_OPS`
-(e.g. `vocabulary,merge`) to narrow what a scheduled run does — worth doing if nobody is reviewing
-proposals, since an unreviewed proposal holds the watermark back and its pairs are re-judged every
-run.
+(e.g. `vocabulary,merge`) to narrow what a scheduled run does. **If nobody reviews proposals, set
+it**: an unreviewed proposal holds the watermark back and its pairs are re-judged on every run.
+With `contradiction` off the destructive half is still safe — a merge the judge blocks stays
+blocked, and the count reaches you in the ntfy summary as `skipped: merge_contradicts N`.
 
 ### `dream_review`
 

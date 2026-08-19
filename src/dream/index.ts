@@ -157,15 +157,23 @@ export async function runDream(
     }
 
     // Similarity cannot tell agreement from negation, so the judge sees every
-    // cluster before anything is archived. What it refuses is proposed, not
-    // dropped — even when `ops` did not ask for contradiction, because the
-    // alternative is discarding the finding that stopped the merge.
+    // cluster before anything is archived.
     const screen = await screenMergeClusters(compatible, judge);
     if (screen.blocked > 0) skipped.merge_unscreened = screen.blocked;
 
     for (const item of screen.contradictions) {
-      items.push(item);
-      bump(proposed, "contradiction");
+      // Refusing the merge is the half that prevents data loss, and it happens
+      // either way. Whether the finding becomes a PROPOSAL follows `ops`: a
+      // caller who did not ask for contradiction is not reviewing proposals,
+      // and an unreviewed one pins the watermark behind those thoughts forever
+      // while the run re-judges the same pair on every pass. Counted, not
+      // silently dropped — the notification carries `skipped`.
+      if (ops.includes("contradiction")) {
+        items.push(item);
+        bump(proposed, "contradiction");
+      } else {
+        bump(skipped, "merge_contradicts");
+      }
       mergedIds.add(item.a);
       mergedIds.add(item.b);
     }

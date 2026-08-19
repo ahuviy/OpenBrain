@@ -27,6 +27,8 @@ export interface ScheduledDreamRun {
   project: string;
   applied: Record<string, number>;
   proposed: Record<string, number>;
+  /** What the run refused to do — a blocked merge leaves no other trace. */
+  skipped: Record<string, number>;
   proposal_id: string | null;
   candidates: number;
 }
@@ -49,6 +51,11 @@ function summarise(runs: ScheduledDreamRun[], failures: Array<{ project: string;
 
   for (const run of runs) {
     lines.push(`${label(run.project)}: applied ${counts(run.applied)}; proposed ${counts(run.proposed)}`);
+    // A merge the judge blocked with contradiction off leaves no proposal and
+    // no applied change; without this the notification reads "nothing
+    // happened" about a real finding.
+    const refused = counts(run.skipped);
+    if (refused !== "nothing") lines.push(`  skipped: ${refused}`);
     // The id is the actionable part: these are the judgments the run is not
     // allowed to apply, and they expire.
     if (run.proposal_id) lines.push(`  review: dream_review ${run.proposal_id}`);
@@ -85,6 +92,7 @@ export async function runScheduledDream(deps: ScheduledDreamDeps): Promise<Sched
         project,
         applied: result.applied,
         proposed: result.proposed,
+        skipped: result.skipped,
         proposal_id: result.proposal_id,
         candidates: result.candidates,
       });

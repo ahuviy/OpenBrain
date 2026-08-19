@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   merged immediately and unreviewably, while the same disagreement phrased
   differently went through the proposal gate. What the judge refuses is proposed;
   what it cannot judge is left alone and counted in `skipped.merge_unscreened`.
+- A merge blocked by the judge only becomes a proposal when `ops` includes
+  `contradiction`. The merge is refused either way — that is the half that
+  prevents data loss — but a caller who is not reviewing proposals should not
+  accumulate one, since an unreviewed proposal pins the watermark behind those
+  thoughts and the run re-judges the same pair every pass. The finding is
+  counted in `skipped.merge_contradicts` and reported in the scheduled run's
+  notification.
 - `dream` returns `applied_items`: what each merge collapsed, with the source
   thoughts. A merge archives rows with no review step and nothing else recorded
   what it did.

@@ -306,6 +306,51 @@ describe("runDream", () => {
     expect(recorded.changes).toEqual([]);
   });
 
+  it("blocks the merge but proposes nothing when contradiction was not asked for", async () => {
+    // For a caller who never reviews proposals, a proposal is worse than no
+    // finding: it pins the watermark behind those thoughts forever and the run
+    // re-judges the same pair every time. The merge is still refused — that is
+    // the data-loss half — and the disagreement is counted, not discarded.
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(
+      port, judgeContradicts, synthesise, config, thresholds, { ops: ["merge"] }, now,
+    );
+
+    expect(recorded.merges).toBe(0);
+    expect(recorded.proposals).toBe(0);
+    expect(result.proposal_id).toBeNull();
+    expect(result.skipped.merge_contradicts).toBe(1);
+  });
+
+  it("advances the watermark when a blocked merge produced no proposal", async () => {
+    // Nothing is awaiting review, so nothing is held back.
+    const rows = [candidate("a", { updated_at: new Date("2026-08-10T10:00:00Z") })];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { a: [other] });
+
+    await runDream(
+      port, judgeContradicts, synthesise, config, thresholds, { ops: ["merge"] }, now,
+    );
+
+    expect(recorded.watermarks[0]).toEqual(new Date("2026-08-10T10:00:00Z"));
+  });
+
+  it("still proposes the disagreement when contradiction WAS asked for", async () => {
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(
+      port, judgeContradicts, synthesise, config, thresholds, { ops: ["merge", "contradiction"] }, now,
+    );
+
+    expect(result.proposed.contradiction).toBe(1);
+    expect(result.skipped.merge_contradicts ?? 0).toBe(0);
+  });
+
   it("only runs the operations it was asked for", async () => {
     const rows = [candidate("a", { metadata: { topics: ["fx"] } })];
     const other = { ...candidate("b"), similarity: 0.85 } as ThoughtRow & { similarity: number };
