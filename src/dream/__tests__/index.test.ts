@@ -37,21 +37,40 @@ function candidate(id: string, overrides: Partial<CandidateRow> = {}): Candidate
 }
 
 interface Recorded {
+  changes: Array<{ id: string; topics?: string[]; people?: string[] }>;
   vocabulary: string[];
   merges: number;
   proposals: number;
   watermarks: Date[];
 }
 
-function fakePort(rows: CandidateRow[], neighbourMap: Record<string, Array<ThoughtRow & { similarity: number }>>) {
-  const recorded: Recorded = { vocabulary: [], merges: 0, proposals: 0, watermarks: [] };
+interface VocabularyFixture {
+  counts?: { topics: Record<string, number>; people: Record<string, number> };
+  tagged?: ThoughtRow[];
+}
+
+function fakePort(
+  rows: CandidateRow[],
+  neighbourMap: Record<string, Array<ThoughtRow & { similarity: number }>>,
+  vocabulary: VocabularyFixture = {},
+) {
+  const recorded: Recorded = { vocabulary: [], merges: 0, proposals: 0, watermarks: [], changes: [] };
   const port: DreamPort = {
     loadWatermark: async () => new Date("2026-08-01T00:00:00Z"),
     listCandidates: async () => rows,
     neighbours: async (row) => neighbourMap[row.id] ?? [],
     knownTopics: async () => ["forex"],
+    vocabularyCounts: async () => vocabulary.counts ?? { topics: {}, people: {} },
+    // Matches the pg port: jsonb `?|` compares stored spellings exactly, so a
+    // lookup by a normalised key finds nothing.
+    listTagged: async (field, values) =>
+      (vocabulary.tagged ?? []).filter((row) => {
+        const tags = (row.metadata as Record<string, unknown>)[field];
+        return Array.isArray(tags) && tags.some((tag) => values.includes(tag as string));
+      }),
     applyVocabulary: async (change) => {
       recorded.vocabulary.push(change.id);
+      recorded.changes.push(change);
     },
     applyMerge: async () => {
       recorded.merges += 1;
@@ -72,6 +91,7 @@ const judgeContradicts: JudgePair = async (a) => ({
   reason: "clash",
   obsolete_id: a.id,
 });
+const judgeIndependent: JudgePair = async () => ({ verdict: "independent", reason: "same claim" });
 const synthesise: Synthesise = async () => "a summary";
 
 describe("runDream", () => {
@@ -151,6 +171,139 @@ describe("runDream", () => {
 
     expect(result.proposal_id).toBeNull();
     expect(result.items.map((item) => item.key)).toEqual(["contradiction:1"]);
+  });
+
+  it("does not merge a cluster the judge calls contradictory — it proposes it", async () => {
+    // The bug this pins: two flatly incompatible conventions, phrased alike,
+    // sat above the merge threshold and were merged immediately and without
+    // review, while the same disagreement phrased differently went through the
+    // proposal gate. The pairs most in need of review were skipping it.
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(port, judgeContradicts, synthesise, config, thresholds, {}, now);
+
+    expect(recorded.merges).toBe(0);
+    expect(result.applied.merge ?? 0).toBe(0);
+    expect(result.proposed.contradiction).toBe(1);
+    expect(result.items.map((item) => item.key)).toEqual(["contradiction:1"]);
+  });
+
+  it("merges what the judge clears, and reports what it merged", async () => {
+    // A merge applies immediately and archives its sources, so the run has to
+    // say what it collapsed — counts alone leave an unreviewable write.
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(port, judgeIndependent, synthesise, config, thresholds, {}, now);
+
+    expect(recorded.merges).toBe(1);
+    expect(result.applied.merge).toBe(1);
+    expect(result.applied_items).toEqual([
+      {
+        kind: "merge",
+        sources: [
+          { id: "a", content: "content a" },
+          { id: "b", content: "content b" },
+        ],
+      },
+    ]);
+  });
+
+  it("holds the watermark behind thoughts left in a proposal", async () => {
+    // Advancing past them makes the proposal unreconstructable: the next run no
+    // longer selects those thoughts, so nothing can regenerate the items.
+    const rows = [candidate("a", { updated_at: new Date("2026-08-10T10:00:00Z") })];
+    const other = { ...candidate("b"), similarity: 0.85 } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { a: [other] });
+
+    await runDream(port, judgeContradicts, synthesise, config, thresholds, {}, now);
+
+    expect(recorded.watermarks).toHaveLength(1);
+    expect(recorded.watermarks[0]!.getTime()).toBeLessThan(
+      new Date("2026-08-10T10:00:00Z").getTime(),
+    );
+  });
+
+  it("advances the watermark normally when nothing is awaiting review", async () => {
+    const rows = [candidate("a", { updated_at: new Date("2026-08-10T10:00:00Z") })];
+    const { port, recorded } = fakePort(rows, {});
+
+    await runDream(port, judgeIndependent, synthesise, config, thresholds, {}, now);
+
+    expect(recorded.watermarks[0]).toEqual(new Date("2026-08-10T10:00:00Z"));
+  });
+
+  it("unifies a person's short and full name, reaching thoughts the watermark excludes", async () => {
+    // The pass named for unifying vocabulary only ever applied the CONFIGURED
+    // alias table, so `Dohmen` and `Bert Dohmen` survived every run. The rows
+    // that need fixing are old ones — exactly what the watermark filters out.
+    const old = {
+      ...candidate("old", { metadata: { people: ["Bert Dohmen"] } }),
+    } as ThoughtRow;
+    const { port, recorded } = fakePort([], {}, {
+      counts: { topics: {}, people: { Dohmen: 7, "Bert Dohmen": 3 } },
+      tagged: [old],
+    });
+
+    const result = await runDream(port, judgeIndependent, synthesise, config, thresholds, {}, now);
+
+    expect(result.applied.vocabulary).toBe(1);
+    expect(recorded.changes).toEqual([{ id: "old", people: ["Dohmen"] }]);
+  });
+
+  it("leaves related-but-different topics alone", async () => {
+    // `markets` is not a spelling of `market-analysis`; folding them would
+    // rewrite metadata on a guess, which is a judgment call, not a sweep.
+    const tagged = [candidate("old", { metadata: { topics: ["markets"] } }) as ThoughtRow];
+    const { port, recorded } = fakePort([], {}, {
+      counts: { topics: { "market-analysis": 5, markets: 3 }, people: {} },
+      tagged,
+    });
+
+    const result = await runDream(port, judgeIndependent, synthesise, config, thresholds, {}, now);
+
+    expect(result.applied.vocabulary ?? 0).toBe(0);
+    expect(recorded.changes).toEqual([]);
+  });
+
+  it("lets a configured alias override an inferred one", async () => {
+    // Config is someone's decision; inference is a rule of thumb about spelling.
+    const tagged = [candidate("old", { metadata: { people: ["Bert Dohmen"] } }) as ThoughtRow];
+    const { port, recorded } = fakePort([], {}, {
+      counts: { topics: {}, people: { Dohmen: 7, "Bert Dohmen": 3 } },
+      tagged,
+    });
+
+    await runDream(
+      port,
+      judgeIndependent,
+      synthesise,
+      { ...config, personAliases: { "bert dohmen": "Bert Dohmen (Dohmen Capital)" } },
+      thresholds,
+      {},
+      now,
+    );
+
+    expect(recorded.changes).toEqual([
+      { id: "old", people: ["Bert Dohmen (Dohmen Capital)"] },
+    ]);
+  });
+
+  it("does not sweep the corpus when vocabulary was not asked for", async () => {
+    const tagged = [candidate("old", { metadata: { people: ["Bert Dohmen"] } }) as ThoughtRow];
+    const { port, recorded } = fakePort([candidate("a")], {}, {
+      counts: { topics: {}, people: { Dohmen: 7, "Bert Dohmen": 3 } },
+      tagged,
+    });
+
+    await runDream(
+      port, judgeIndependent, synthesise, config, thresholds, { ops: ["merge"] }, now,
+    );
+
+    expect(recorded.changes).toEqual([]);
   });
 
   it("only runs the operations it was asked for", async () => {

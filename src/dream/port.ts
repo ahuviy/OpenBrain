@@ -14,7 +14,9 @@ import {
   insertMergedThought,
   insertProposal,
   listCandidatesSince,
+  countVocabulary,
   listThoughtsByIds,
+  listThoughtsTagged,
   loadProposal,
   lockDreamState,
   mergeThoughtMetadata,
@@ -59,6 +61,10 @@ export function createDreamPort(pool: pg.Pool, embedder: Embedder, ttlHours: num
     },
 
     knownTopics: (project) => getTopicVocabulary(pool, project === "" ? undefined : project),
+
+    vocabularyCounts: (project) => countVocabulary(pool, project),
+
+    listTagged: (field, values, project) => listThoughtsTagged(pool, field, values, project),
 
     async applyVocabulary(change: VocabularyChange) {
       const patch: Record<string, unknown> = {};

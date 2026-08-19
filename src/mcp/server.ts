@@ -284,7 +284,7 @@ export function createMcpServer(): Server {
         name: "dream",
         description:
           "Consolidate the brain. Merges near-duplicates the write path let through, normalises topic and people vocabulary, and PROPOSES the judgment calls (contradictions, cluster summaries) for you to review.\n\n" +
-          "Vocabulary and merges apply immediately and are reversible. Contradictions and syntheses come back in `items` — each with its key, the thoughts involved, and what would change — plus a proposal_id. Nothing is archived until you call dream_apply. Use dry_run first on a brain you have not consolidated before.\n\n" +
+          "Vocabulary and merges apply immediately and are reversible; what a merge collapsed comes back in `applied_items`. A merge is only applied once the same judge that finds contradictions has cleared the cluster — two thoughts can sit on top of each other in the embedding space and still say opposite things. Contradictions and syntheses come back in `items` — each with its key, the thoughts involved, and what would change — plus a proposal_id. Nothing is archived until you call dream_apply. Use dry_run first on a brain you have not consolidated before.\n\n" +
           "Consolidates ONE project at a time: a bare call covers only thoughts with no project, so project-scoped thoughts need a call each. Read the project list from thought_stats.",
         inputSchema: {
           type: "object" as const,

@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { projectKey, nextWatermark, type CandidateRow } from "../candidates.js";
+import { projectKey, nextWatermark, holdBackWatermark, type CandidateRow } from "../candidates.js";
 
 function candidate(updated: string): CandidateRow {
   return {
@@ -66,5 +66,41 @@ describe("nextWatermark", () => {
     expect(nextWatermark([candidate("2026-08-10T10:00:00Z")], current, runStart, slackMs)).toBe(
       current,
     );
+  });
+});
+
+describe("holdBackWatermark", () => {
+  const current = new Date("2026-08-01T00:00:00Z");
+  const advanced = new Date("2026-08-10T00:00:00Z");
+  const held = (iso: string) => ({ updated_at: new Date(iso) });
+
+  it("leaves the watermark alone when nothing is awaiting review", () => {
+    expect(holdBackWatermark(advanced, [], current)).toEqual(advanced);
+  });
+
+  it("stops short of the oldest thought sitting in a proposal", () => {
+    // A thought marked settled while its proposal is still unreviewed can never
+    // be found again: the run that would regenerate the item no longer selects
+    // it, and an expired or lost proposal takes the judgment with it.
+    const result = holdBackWatermark(advanced, [held("2026-08-05T00:00:00Z")], current);
+
+    expect(result.getTime()).toBeLessThan(new Date("2026-08-05T00:00:00Z").getTime());
+    expect(result.getTime()).toBeGreaterThanOrEqual(current.getTime());
+  });
+
+  it("never moves the watermark backwards", () => {
+    // Held thoughts older than the stored watermark were settled by an earlier
+    // run; rewinding would re-examine the whole corpus behind them.
+    expect(holdBackWatermark(advanced, [held("2026-07-01T00:00:00Z")], current)).toEqual(current);
+  });
+
+  it("holds at the oldest of several", () => {
+    const result = holdBackWatermark(
+      advanced,
+      [held("2026-08-08T00:00:00Z"), held("2026-08-04T00:00:00Z")],
+      current,
+    );
+
+    expect(result.getTime()).toBeLessThan(new Date("2026-08-04T00:00:00Z").getTime());
   });
 });

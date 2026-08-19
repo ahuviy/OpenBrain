@@ -587,6 +587,81 @@ export async function listCandidatesSince(
   return rows;
 }
 
+/** The two metadata arrays dream's vocabulary sweep knows how to read. */
+const TAG_FIELDS = ["topics", "people"] as const;
+export type TagField = (typeof TAG_FIELDS)[number];
+
+function assertTagField(field: TagField): void {
+  // The field name reaches SQL by interpolation — jsonb keys cannot be bound as
+  // parameters — so the set has to be closed at the boundary.
+  if (!TAG_FIELDS.includes(field)) {
+    throw new Error(`unknown tag field ${String(field)}`);
+  }
+}
+
+/**
+ * How often each topic and person appears in a project's live thoughts.
+ *
+ * Dream infers aliases from this: the spelling the brain already uses most wins,
+ * so unifying rewrites the fewest rows. Archived thoughts are excluded — they
+ * are not part of the vocabulary anyone searches.
+ */
+export async function countVocabulary(
+  pool: pg.Pool,
+  project: string
+): Promise<{ topics: Record<string, number>; people: Record<string, number> }> {
+  const { rows } = await pool.query<{ field: string; value: string; uses: string }>(
+    `SELECT field, value, COUNT(*) AS uses
+     FROM thoughts,
+          LATERAL (VALUES ('topics'), ('people')) AS f(field),
+          LATERAL jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(metadata->f.field) = 'array'
+                 THEN metadata->f.field ELSE '[]'::jsonb END
+          ) AS v(value)
+     WHERE archived = false
+       AND COALESCE(project, '') = $1
+     GROUP BY field, value`,
+    [project]
+  );
+
+  const counts = { topics: {} as Record<string, number>, people: {} as Record<string, number> };
+  for (const row of rows) {
+    const bucket = row.field === "topics" ? counts.topics : counts.people;
+    bucket[row.value] = Number(row.uses);
+  }
+
+  return counts;
+}
+
+/**
+ * Every live thought carrying any of these tags.
+ *
+ * The vocabulary sweep runs over the run's candidates, but an alias inferred
+ * today has to reach the rows that predate it — those are exactly the rows the
+ * watermark excludes, and leaving them behind means the two spellings survive
+ * the pass named for unifying them.
+ */
+export async function listThoughtsTagged(
+  pool: pg.Pool,
+  field: TagField,
+  values: string[],
+  project: string
+): Promise<ThoughtRow[]> {
+  assertTagField(field);
+  if (values.length === 0) return [];
+
+  const { rows } = await pool.query<ThoughtRow>(
+    `SELECT id, content, metadata, project, created_by, archived, supersedes, created_at, updated_at
+     FROM thoughts
+     WHERE archived = false
+       AND metadata->'${field}' ?| $1::text[]
+       AND COALESCE(project, '') = $2`,
+    [values, project]
+  );
+
+  return rows;
+}
+
 /**
  * Fetches thoughts by id, for rendering a dream proposal a caller has to review.
  *

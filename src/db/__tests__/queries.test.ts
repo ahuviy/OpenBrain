@@ -16,6 +16,8 @@ import {
   deleteThought,
   batchInsertThoughts,
   listThoughtsByIds,
+  countVocabulary,
+  listThoughtsTagged,
   type ThoughtMetadata,
 } from "../queries.js";
 
@@ -461,5 +463,67 @@ describe("listThoughtsByIds", () => {
 
     await expect(listThoughtsByIds(pool, [])).resolves.toEqual([]);
     expect(mockQuery).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Vocabulary sweep ───────────────────────────────────────────────
+
+describe("countVocabulary", () => {
+  it("counts topics and people across the corpus in one round trip", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({
+      rows: [
+        { field: "topics", value: "markets", uses: "3" },
+        { field: "people", value: "Dohmen", uses: "7" },
+      ],
+    });
+
+    const counts = await countVocabulary(pool, "");
+
+    expect(mockQuery).toHaveBeenCalledOnce();
+    expect(counts).toEqual({ topics: { markets: 3 }, people: { Dohmen: 7 } });
+  });
+
+  it("counts the project it was given, not the whole brain", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await countVocabulary(pool, "markets");
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("COALESCE(project, '') = $1");
+    expect(sql).toContain("archived = false");
+    expect(params).toEqual(["markets"]);
+  });
+});
+
+describe("listThoughtsTagged", () => {
+  it("finds every thought carrying any of the given tags", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [{ id: "id-a" }] });
+
+    const rows = await listThoughtsTagged(pool, "people", ["Bert Dohmen"], "");
+
+    expect(rows).toHaveLength(1);
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("metadata->'people'");
+    expect(sql).toContain("?|");
+    expect(params).toEqual([["Bert Dohmen"], ""]);
+  });
+
+  it("does not query for an empty tag list", async () => {
+    const { pool, mockQuery } = createMockPool();
+
+    await expect(listThoughtsTagged(pool, "topics", [], "")).resolves.toEqual([]);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  it("only accepts the two metadata fields it knows how to index", async () => {
+    const { pool } = createMockPool();
+
+    await expect(
+      // A field name reaches SQL by interpolation, so the set must be closed.
+      listThoughtsTagged(pool, "metadata'; DROP TABLE thoughts; --" as never, ["x"], ""),
+    ).rejects.toThrow();
   });
 });

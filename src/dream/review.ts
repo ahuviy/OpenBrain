@@ -44,6 +44,24 @@ export interface SynthesisReview {
 
 export type ReviewItem = ContradictionReview | SynthesisReview;
 
+/**
+ * What an immediately-applied operation did.
+ *
+ * A merge writes one row and archives the rest with no review step, so the run
+ * has to say what it collapsed. Counts alone leave the one destructive thing
+ * dream does on its own unauditable after the fact.
+ */
+export interface MergeAudit {
+  kind: "merge";
+  sources: ReviewThought[];
+}
+
+export type AppliedItem = MergeAudit;
+
+export function mergeAudit(sources: ThoughtRow[]): MergeAudit {
+  return { kind: "merge", sources: sources.map((row) => ({ id: row.id, content: row.content })) };
+}
+
 export function reviewItems(items: ProposalItem[], thoughts: ThoughtRow[]): ReviewItem[] {
   const byId = new Map(thoughts.map((row) => [row.id, row]));
   const keys = keysFor(items);

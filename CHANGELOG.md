@@ -24,6 +24,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expand, deploy, contract.
 
 ### Changed
+- `dream` screens every merge cluster through the contradiction judge before
+  applying it. Similarity cannot tell agreement from negation, so two flatly
+  incompatible thoughts phrased alike sat above the merge threshold and were
+  merged immediately and unreviewably, while the same disagreement phrased
+  differently went through the proposal gate. What the judge refuses is proposed;
+  what it cannot judge is left alone and counted in `skipped.merge_unscreened`.
+- `dream` returns `applied_items`: what each merge collapsed, with the source
+  thoughts. A merge archives rows with no review step and nothing else recorded
+  what it did.
+- The vocabulary pass now folds spelling variants it infers from the project's
+  own vocabulary (`Bert Dohmen`/`Dohmen`, `Market Analysis`/`market-analysis`),
+  keeping the spelling the brain uses most, and sweeps the thoughts the watermark
+  excludes — the rows carrying an old spelling are the old ones. Related but
+  distinct tags (`markets` vs `market-analysis`) are left alone. Configured
+  aliases still win over inferred ones.
+- The watermark no longer advances past thoughts left in an unreviewed proposal,
+  which had made an expired or superseded proposal unreconstructable.
 - `dream`'s description states that one run covers one project, and that a bare
   call covers only thoughts with no project.
 

@@ -15,6 +15,8 @@ import type pg from "pg";
 
 import dreamPortContractTests from "../integration-suites/dream-port-contract.suite.js";
 import { createDreamPort, loadProposalReview } from "../dream/port.js";
+import { runDream } from "../dream/index.js";
+import { getDreamThresholds } from "../dream/config.js";
 import { insertProposal, insertThought, type ThoughtRow } from "../db/queries.js";
 import type { DreamPort } from "../dream/index.js";
 import type { Embedder } from "../embedder/types.js";
@@ -158,6 +160,72 @@ describe.skipIf(!reachable)("loadProposalReview", () => {
     await expect(
       loadProposalReview(pool, "00000000-0000-0000-0000-000000000000", new Date()),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe.skipIf(!reachable)("vocabulary unification end to end", () => {
+  let database: TestDatabase;
+  let pool: pg.Pool;
+
+  beforeAll(async () => {
+    database = await connectTestDatabase();
+    pool = database.pool;
+  });
+
+  afterAll(async () => {
+    await database?.close();
+  });
+
+  it("rewrites an old spelling on rows the watermark excludes", async () => {
+    // The report's case: `Dohmen` (used more) and `Bert Dohmen` coexisting, on
+    // thoughts old enough that a run would not otherwise look at them.
+    await database.truncate();
+
+    const seed = async (content: string, people: string[]) =>
+      (await insertThought(
+        pool,
+        content,
+        testEmbedding(content.length),
+        { people } as unknown as ThoughtRow["metadata"],
+        "markets",
+        undefined,
+        "ahuvi",
+      )).id;
+
+    const majority = [await seed("one", ["Dohmen"]), await seed("two", ["Dohmen"])];
+    const odd = await seed("three", ["Bert Dohmen"]);
+
+    // Everything is now behind the watermark: without the corpus sweep the run
+    // has no candidates at all and the two spellings survive.
+    const port = createDreamPort(pool, stubEmbedder, 72);
+    // loadWatermark first: saveWatermark is an UPDATE, and dream_state was
+    // truncated, so saving without the row present writes nothing at all — and
+    // the run would then see every thought as a candidate.
+    await port.loadWatermark("markets");
+    await port.saveWatermark("markets", new Date(Date.now() + 60_000), {});
+
+    const result = await runDream(
+      port,
+      async () => ({ verdict: "independent", reason: "stub" }),
+      async () => "stub summary",
+      { topicAliases: {}, personAliases: {}, selfNames: [] },
+      getDreamThresholds(),
+      { project: "markets", ops: ["vocabulary"] },
+      () => new Date(),
+    );
+
+    expect(result.candidates).toBe(0);
+    expect(result.applied.vocabulary).toBe(1);
+
+    const { rows } = await pool.query<{ id: string; people: string[] }>(
+      `SELECT id, ARRAY(SELECT jsonb_array_elements_text(metadata->'people')) AS people
+       FROM thoughts WHERE id = ANY($1::uuid[])`,
+      [[...majority, odd]],
+    );
+
+    for (const row of rows) {
+      expect(row.people).toEqual(["Dohmen"]);
+    }
   });
 });
 

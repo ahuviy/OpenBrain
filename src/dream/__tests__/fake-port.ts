@@ -56,6 +56,32 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
       return [];
     },
 
+    async vocabularyCounts(project) {
+      const counts = { topics: {} as Record<string, number>, people: {} as Record<string, number> };
+      for (const row of thoughts) {
+        if (row.archived || bucket(row.project) !== project) continue;
+        const metadata = row.metadata as Record<string, unknown>;
+        for (const field of ["topics", "people"] as const) {
+          const values = metadata[field];
+          if (!Array.isArray(values)) continue;
+          for (const value of values) {
+            if (typeof value !== "string") continue;
+            counts[field][value] = (counts[field][value] ?? 0) + 1;
+          }
+        }
+      }
+      return counts;
+    },
+
+    async listTagged(field, values, project) {
+      if (values.length === 0) return [];
+      return thoughts.filter((row) => {
+        if (row.archived || bucket(row.project) !== project) return false;
+        const tags = (row.metadata as Record<string, unknown>)[field];
+        return Array.isArray(tags) && tags.some((tag) => values.includes(tag as string));
+      });
+    },
+
     async knownTopics() {
       return [];
     },

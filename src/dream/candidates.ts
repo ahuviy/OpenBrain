@@ -53,3 +53,38 @@ export function nextWatermark(
 
   return capped.getTime() > current.getTime() ? capped : current;
 }
+
+/**
+ * Keeps the watermark behind anything still awaiting review.
+ *
+ * A thought marked settled while the proposal naming it is unreviewed can never
+ * be found again: the next run does not select it, so nothing regenerates the
+ * item, and an expired or superseded proposal takes the judgment with it. That
+ * is how a proposal became unreadable AND unreconstructable at once.
+ *
+ * Holding costs a re-judgment of those pairs on every run until the proposal is
+ * reviewed, which is bounded by the review and visible in the run's counts. A
+ * new run supersedes the stale proposal rather than colliding with it.
+ *
+ * Never rewinds: held thoughts older than the stored watermark were settled by
+ * an earlier run, and moving back would re-examine the whole corpus behind them.
+ */
+export function holdBackWatermark(
+  advanced: Date,
+  held: Array<{ updated_at: Date }>,
+  current: Date,
+): Date {
+  if (held.length === 0) return advanced;
+
+  let oldest = held[0]!.updated_at;
+  for (const row of held) {
+    if (row.updated_at.getTime() < oldest.getTime()) oldest = row.updated_at;
+  }
+
+  // Strictly before: listCandidatesSince selects on `updated_at > watermark`, so
+  // a watermark equal to the row's stamp would exclude the very row being held.
+  const limit = new Date(oldest.getTime() - 1);
+  const capped = limit.getTime() < advanced.getTime() ? limit : advanced;
+
+  return capped.getTime() > current.getTime() ? capped : current;
+}

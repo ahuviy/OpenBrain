@@ -160,6 +160,66 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
       });
     });
 
+    describe("vocabulary sweep", () => {
+      it("counts each topic and person across the project's live thoughts", async () => {
+        await driver.seed({ content: "one", project: "markets", metadata: { topics: ["markets"], people: ["Dohmen"] } });
+        await driver.seed({ content: "two", project: "markets", metadata: { topics: ["markets"], people: ["Bert Dohmen"] } });
+
+        const counts = await port.vocabularyCounts("markets");
+
+        expect(counts.topics.markets).toBe(2);
+        expect(counts.people).toEqual({ Dohmen: 1, "Bert Dohmen": 1 });
+      });
+
+      it("counts one project's vocabulary, not another's", async () => {
+        await driver.seed({ content: "one", project: "markets", metadata: { topics: ["markets"] } });
+        await driver.seed({ content: "two", project: "other", metadata: { topics: ["markets"] } });
+
+        expect((await port.vocabularyCounts("markets")).topics.markets).toBe(1);
+      });
+
+      it("ignores archived thoughts, which nobody searches", async () => {
+        await driver.seed({ content: "one", project: "markets", metadata: { topics: ["markets"] }, archived: true });
+
+        expect(await port.vocabularyCounts("markets")).toEqual({ topics: {}, people: {} });
+      });
+
+      it("tolerates thoughts with no topics or people at all", async () => {
+        await driver.seed({ content: "one", project: "markets" });
+
+        expect(await port.vocabularyCounts("markets")).toEqual({ topics: {}, people: {} });
+      });
+
+      it("finds thoughts by tag regardless of the watermark", async () => {
+        // The whole point: an alias inferred today must reach the rows that
+        // predate it, which are exactly the rows the watermark excludes.
+        const id = await driver.seed({
+          content: "one",
+          project: "markets",
+          metadata: { people: ["Bert Dohmen"] },
+        });
+
+        const found = await port.listTagged("people", ["Bert Dohmen"], "markets");
+
+        expect(found.map((row) => row.id)).toEqual([id]);
+      });
+
+      it("matches any of the tags asked for, and none of the others", async () => {
+        await driver.seed({ content: "one", project: "markets", metadata: { topics: ["forex"] } });
+        const wanted = await driver.seed({ content: "two", project: "markets", metadata: { topics: ["markets"] } });
+
+        const found = await port.listTagged("topics", ["markets", "absent"], "markets");
+
+        expect(found.map((row) => row.id)).toEqual([wanted]);
+      });
+
+      it("returns nothing for an empty tag list", async () => {
+        await driver.seed({ content: "one", project: "markets", metadata: { topics: ["markets"] } });
+
+        expect(await port.listTagged("topics", [], "markets")).toEqual([]);
+      });
+    });
+
     describe("proposals", () => {
       it("returns an id for a saved proposal", async () => {
         const id = await port.saveProposal("markets", [
