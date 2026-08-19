@@ -5,7 +5,6 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22.0.0-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-9_tools-8A2BE2)](https://modelcontextprotocol.io/)
-[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-purple)](https://srnichols.github.io/OpenBrain/)
 
 **Persistent, searchable memory for every AI tool you use — solo or as a small team.**
 
