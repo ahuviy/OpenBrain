@@ -76,6 +76,12 @@ cd OpenBrain
 | `-SubscriptionId` | No | Current | Azure subscription ID |
 | `-ContainerImage` | No | `ghcr.io/ahuviy/openbrain:latest` | Container image to deploy |
 
+> **This fork does not publish container images.** The CI job that pushed to ghcr was removed: no
+> deployment path in this repository pulls an image — fly, both compose files and the devbox all
+> build from source, and Azure is the only consumer, which this fork does not use. The image at
+> `ghcr.io/ahuviy/openbrain:latest` still exists but is frozen at the last run that published it.
+> To deploy on Azure, build and push an image yourself and pass it with `-ContainerImage`.
+
 ### Example with All Parameters
 
 ```powershell

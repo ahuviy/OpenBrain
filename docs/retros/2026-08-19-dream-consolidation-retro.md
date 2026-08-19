@@ -211,4 +211,6 @@ and that "what does this preserve?" belongs in the design template rather than i
       revived, the hallmark round-trip test needs restoring — pre-existing, outside this feature
 - [x] The `docker` CI job failed on `ghcr.io/<owner>/OpenBrain` — registry names must be lowercase,
       but `github.repository` preserves the repo's casing. Fixed by lowercasing the whole slug, which
-      holds for any owner and any fork. Pre-existing; it had failed on every run since the fork
+      holds for any owner and any fork. Pre-existing; it had failed on every run since the fork.
+      Superseded: the job was then removed entirely — nothing in the repository pulls the image, and
+      the one path that would (Azure) is not used here
