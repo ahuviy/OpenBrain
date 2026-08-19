@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dream` now returns the proposed `items` in full, not just counts, keyed exactly
   as `dream_apply` takes them.
 
+### Added (scheduling)
+- `npm run dream` — an unattended run that consolidates every project, notifies
+  via ntfy on success and failure, and exits non-zero when any project failed.
+  A GitHub Actions cron (`.github/workflows/dream.yml`) fires it every two days
+  against the deployed Fly machine; Fly's own machine schedules cannot express a
+  two-day cadence.
+
 ### Fixed
 - Knex migrations (004+) are applied at startup. Nothing on the hosted path ever
   ran them — no release command, no entrypoint step — so production was missing

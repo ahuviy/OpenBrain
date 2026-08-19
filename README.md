@@ -379,6 +379,19 @@ A cluster whose thoughts disagree on project, author, or import origin is skippe
 — a merge writes one row and archives the rest, so any disagreement would be silently collapsed onto
 one source's value.
 
+#### Running it on a schedule
+
+`npm run dream` (`dist/cli/dream.js`) is the unattended entry point: it walks **every** project —
+including the no-project bucket — applies what dream is allowed to apply, and pushes a summary to
+ntfy (`NTFY_URL`), naming any `proposal_id` that is waiting on a human. It never prompts, and it
+exits non-zero if any project failed while still consolidating the rest.
+
+[`.github/workflows/dream.yml`](.github/workflows/dream.yml) runs it every two days against the
+deployed Fly machine (Fly's own schedules are only hourly/daily/weekly/monthly). Set `DREAM_OPS`
+(e.g. `vocabulary,merge`) to narrow what a scheduled run does — worth doing if nobody is reviewing
+proposals, since an unreviewed proposal holds the watermark back and its pairs are re-judged every
+run.
+
 ### `dream_review`
 
 Read a proposal back without deciding anything — every item with its key, the thoughts behind it,

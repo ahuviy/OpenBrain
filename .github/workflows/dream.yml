@@ -1,0 +1,68 @@
+# Scheduled consolidation.
+#
+# Fly's own machine schedules are hourly/daily/weekly/monthly, so a two-day
+# cadence has to come from here. `*/2` is day-of-month, which means the 31st and
+# the 1st land on consecutive days — harmless, because a dream run is
+# incremental and idempotent: the second one simply finds almost nothing.
+#
+# The run happens inside the deployed machine rather than a one-off, so it uses
+# the image and secrets that are actually live, and costs no extra machine. It
+# is unattended by design: src/cli/dream.ts walks every project, applies what it
+# is allowed to apply, and pushes the result to ntfy. It never waits for input.
+name: dream
+
+on:
+  schedule:
+    - cron: '0 3 */2 * *'
+  workflow_dispatch:
+
+concurrency:
+  # Two consolidations of one project would contend on the dream_state row lock
+  # and one would wait out the other for nothing.
+  group: dream-openbrain-ahuvi
+  cancel-in-progress: false
+
+jobs:
+  dream:
+    runs-on: ubuntu-latest
+
+    env:
+      APP: openbrain-ahuvi
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Wake the machine
+        run: |
+          set -euo pipefail
+          id=$(flyctl machines list --app "$APP" --json | jq -r '.[0].id')
+          echo "machine=$id"
+          # Idempotent: an already-started machine reports an error and that is
+          # not a failure. `suspend` is the app's autostop mode, so the machine
+          # is usually asleep when this fires.
+          flyctl machine start "$id" --app "$APP" || true
+          echo "MACHINE_ID=$id" >> "$GITHUB_ENV"
+
+      - name: Consolidate every project
+        run: |
+          set -euo pipefail
+          flyctl ssh console --app "$APP" --machine "$MACHINE_ID" \
+            -C "/usr/local/bin/node /app/dist/cli/dream.js"
+
+      # The run notifies for itself, success or failure — NTFY_URL is a Fly
+      # secret. This covers the case it cannot: never having got that far.
+      - name: Report a run that never started
+        if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [ -n "${NTFY_URL:-}" ] || exit 0
+          curl -fsS -X POST \
+            -H "Title: Open Brain dream did not run" \
+            -H "Priority: urgent" \
+            -H "Tags: rotating_light" \
+            -d "The scheduled dream never reached the machine. $RUN_URL" \
+            "$NTFY_URL" > /dev/null

@@ -17,6 +17,7 @@ import {
   batchInsertThoughts,
   listThoughtsByIds,
   countVocabulary,
+  listProjects,
   listThoughtsTagged,
   type ThoughtMetadata,
 } from "../queries.js";
@@ -525,5 +526,29 @@ describe("listThoughtsTagged", () => {
       // A field name reaches SQL by interpolation, so the set must be closed.
       listThoughtsTagged(pool, "metadata'; DROP TABLE thoughts; --" as never, ["x"], ""),
     ).rejects.toThrow();
+  });
+});
+
+// ─── listProjects ───────────────────────────────────────────────────
+
+describe("listProjects", () => {
+  it("returns every project bucket, the no-project one included", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [{ project: "" }, { project: "markets" }] });
+
+    // The empty string is a real bucket, not a missing value: a scheduled run
+    // that skipped it would never consolidate project-less thoughts, which is
+    // most of a personal brain.
+    await expect(listProjects(pool)).resolves.toEqual(["", "markets"]);
+    expect(mockQuery.mock.calls[0]![0]).toContain("COALESCE(project, '')");
+  });
+
+  it("ignores archived thoughts", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await listProjects(pool);
+
+    expect(mockQuery.mock.calls[0]![0]).toContain("archived = false");
   });
 });

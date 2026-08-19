@@ -587,6 +587,24 @@ export async function listCandidatesSince(
   return rows;
 }
 
+/**
+ * Every project bucket holding live thoughts, `''` being the no-project one.
+ *
+ * The scheduled dream run walks these: one run consolidates one project, and a
+ * job that only did the default bucket would leave every project-scoped thought
+ * unconsolidated forever.
+ */
+export async function listProjects(pool: pg.Pool): Promise<string[]> {
+  const { rows } = await pool.query<{ project: string }>(
+    `SELECT DISTINCT COALESCE(project, '') AS project
+     FROM thoughts
+     WHERE archived = false
+     ORDER BY project`
+  );
+
+  return rows.map((row) => row.project);
+}
+
 /** The two metadata arrays dream's vocabulary sweep knows how to read. */
 const TAG_FIELDS = ["topics", "people"] as const;
 export type TagField = (typeof TAG_FIELDS)[number];
