@@ -15,6 +15,8 @@ import {
   insertProposal,
   listCandidatesSince,
   countVocabulary,
+  insertDreamRun,
+  listDreamRuns,
   listThoughtsByIds,
   listThoughtsTagged,
   loadProposal,
@@ -103,6 +105,12 @@ export function createDreamPort(pool: pg.Pool, embedder: Embedder, ttlHours: num
       const row = await insertProposal(pool, project, items, ttlHours);
       return row.id;
     },
+
+    recordRun: async (run) => {
+      await insertDreamRun(pool, run);
+    },
+
+    listRuns: (project, limit) => listDreamRuns(pool, project, limit),
 
     async saveWatermark(project, watermark, stats) {
       const client = await pool.connect();

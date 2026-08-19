@@ -37,6 +37,7 @@ function candidate(id: string, overrides: Partial<CandidateRow> = {}): Candidate
 }
 
 interface Recorded {
+  runs: Array<{ project: string; status: string; dry_run: boolean; actions: unknown[] }>;
   changes: Array<{ id: string; topics?: string[]; people?: string[] }>;
   vocabulary: string[];
   merges: number;
@@ -54,7 +55,9 @@ function fakePort(
   neighbourMap: Record<string, Array<ThoughtRow & { similarity: number }>>,
   vocabulary: VocabularyFixture = {},
 ) {
-  const recorded: Recorded = { vocabulary: [], merges: 0, proposals: 0, watermarks: [], changes: [] };
+  const recorded: Recorded = {
+    vocabulary: [], merges: 0, proposals: 0, watermarks: [], changes: [], runs: [],
+  };
   const port: DreamPort = {
     loadWatermark: async () => new Date("2026-08-01T00:00:00Z"),
     listCandidates: async () => rows,
@@ -81,6 +84,15 @@ function fakePort(
     },
     saveWatermark: async (_p, watermark) => {
       recorded.watermarks.push(watermark);
+    },
+    listRuns: async () => [],
+    recordRun: async (run) => {
+      recorded.runs.push({
+        project: run.project,
+        status: run.status,
+        dry_run: run.dry_run,
+        actions: run.actions,
+      });
     },
   };
   return { port, recorded };
@@ -349,6 +361,75 @@ describe("runDream", () => {
 
     expect(result.proposed.contradiction).toBe(1);
     expect(result.skipped.merge_contradicts ?? 0).toBe(0);
+  });
+
+  it("records what it did, not just how much", async () => {
+    // The retro question is "why did it merge those two", and a count cannot
+    // answer it. Every applied change and every refusal gets an entry.
+    const rows = [candidate("a", { metadata: { topics: ["fx"] } })];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(port, judgeIndependent, synthesise, config, thresholds, {}, now);
+
+    expect(result.actions).toEqual([
+      { kind: "vocabulary", id: "a", topics: ["forex"] },
+      { kind: "merge", sources: ["a", "b"] },
+    ]);
+    expect(recorded.runs).toHaveLength(1);
+    expect(recorded.runs[0]).toMatchObject({ status: "ok", project: "", dry_run: false });
+  });
+
+  it("records the pair it refused to merge, and why", async () => {
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port } = fakePort(rows, { a: [other] });
+    const judgeBroken: JudgePair = async () => {
+      throw new Error("provider timeout");
+    };
+
+    const result = await runDream(
+      port, judgeBroken, synthesise, config, thresholds, { ops: ["merge"] }, now,
+    );
+
+    expect(result.actions).toEqual([
+      {
+        kind: "merge_blocked",
+        a: "a",
+        b: "b",
+        reason: "judgment_failed",
+        detail: "Error: provider timeout",
+      },
+    ]);
+  });
+
+  it("records a contradiction it refused to merge on", async () => {
+    const rows = [candidate("a")];
+    const other = { ...candidate("b"), similarity: 0.97 } as ThoughtRow & { similarity: number };
+    const { port } = fakePort(rows, { a: [other] });
+
+    const result = await runDream(
+      port, judgeContradicts, synthesise, config, thresholds, { ops: ["merge"] }, now,
+    );
+
+    expect(result.actions).toEqual([
+      { kind: "merge_blocked", a: "a", b: "b", reason: "contradiction", detail: "clash" },
+    ]);
+  });
+
+  it("records a dry run as a dry run, having changed nothing", async () => {
+    // A dry run belongs in the history — it is how someone checks what a real
+    // run would do — but a history that could not tell the two apart would
+    // attribute changes to a run that made none.
+    const rows = [candidate("a", { metadata: { topics: ["fx"] } })];
+    const { port, recorded } = fakePort(rows, {});
+
+    await runDream(
+      port, judgeIndependent, synthesise, config, thresholds, { dry_run: true }, now,
+    );
+
+    expect(recorded.runs[0]).toMatchObject({ dry_run: true, status: "ok" });
+    expect(recorded.vocabulary).toEqual([]);
   });
 
   it("only runs the operations it was asked for", async () => {

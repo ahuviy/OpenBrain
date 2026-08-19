@@ -18,6 +18,8 @@ import {
   listThoughtsByIds,
   countVocabulary,
   listProjects,
+  insertDreamRun,
+  listDreamRuns,
   listThoughtsTagged,
   type ThoughtMetadata,
 } from "../queries.js";
@@ -550,5 +552,87 @@ describe("listProjects", () => {
     await listProjects(pool);
 
     expect(mockQuery.mock.calls[0]![0]).toContain("archived = false");
+  });
+});
+
+// ─── Run history ────────────────────────────────────────────────────
+
+describe("insertDreamRun", () => {
+  it("records a successful run with its action log", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [{ id: "run-1" }] });
+
+    await insertDreamRun(pool, {
+      project: "markets",
+      status: "ok",
+      dry_run: false,
+      trigger: "schedule",
+      applied: { merge: 1 },
+      proposed: {},
+      skipped: {},
+      actions: [{ kind: "merge", sources: ["a", "b"] }],
+      candidates: 4,
+      clusters: 1,
+      proposal_id: null,
+      error: null,
+      started_at: new Date("2026-08-19T03:00:00Z"),
+    });
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("INSERT INTO dream_runs");
+    expect(params).toContain("markets");
+    expect(params).toContain("ok");
+    // JSONB columns are stringified once, at the boundary.
+    expect(params).toContain(JSON.stringify([{ kind: "merge", sources: ["a", "b"] }]));
+  });
+
+  it("records a failed run, which is the row a retro most needs", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [{ id: "run-2" }] });
+
+    await insertDreamRun(pool, {
+      project: "",
+      status: "failed",
+      dry_run: false,
+      trigger: "schedule",
+      applied: {},
+      proposed: {},
+      skipped: {},
+      actions: [],
+      candidates: 0,
+      clusters: 0,
+      proposal_id: null,
+      error: "embedder timeout",
+      started_at: new Date("2026-08-19T03:00:00Z"),
+    });
+
+    expect(mockQuery.mock.calls[0]![1]).toContain("embedder timeout");
+  });
+});
+
+describe("listDreamRuns", () => {
+  it("returns a project's runs newest first, bounded", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await listDreamRuns(pool, "markets", 20);
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("ORDER BY started_at DESC");
+    expect(sql).toContain("LIMIT");
+    expect(params).toEqual(["markets", 20]);
+  });
+
+  it("reads every project when none is named", async () => {
+    // A retro usually asks "how have the runs been going", not "how has this
+    // one project been going".
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await listDreamRuns(pool, undefined, 20);
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).not.toContain("WHERE project");
+    expect(params).toEqual([20]);
   });
 });

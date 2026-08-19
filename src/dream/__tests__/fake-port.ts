@@ -34,11 +34,28 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
   let thoughts: FakeThought[] = [];
   let watermarks = new Map<string, Date>();
   let openProposals = new Map<string, string>();
+  const resetRuns = () => runs.splice(0, runs.length);
   let proposalSequence = 0;
 
   const bucket = (project: string | null | undefined) => project ?? "";
 
+  const runs: Array<Record<string, unknown>> = [];
+
   const port: DreamPort = {
+    async recordRun(run) {
+      runs.push({ ...run, id: `run-${runs.length + 1}`, finished_at: now() });
+    },
+
+    async listRuns(project, limit) {
+      return runs
+        .filter((run) => project === undefined || run.project === project)
+        .sort(
+          (a, b) =>
+            (b.started_at as Date).getTime() - (a.started_at as Date).getTime(),
+        )
+        .slice(0, limit) as never;
+    },
+
     async loadWatermark(project) {
       return watermarks.get(project) ?? new Date(0);
     },
@@ -155,6 +172,7 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
       thoughts = [];
       watermarks = new Map();
       openProposals = new Map();
+      resetRuns();
     },
   };
 }

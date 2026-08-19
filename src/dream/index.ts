@@ -18,7 +18,7 @@ import { planContradictionItems, type JudgePair } from "./ops/contradiction.js";
 import { planSynthesisItems, type Synthesise } from "./ops/synthesis.js";
 import type { ProposalItem } from "./proposal.js";
 import { mergeAudit, referencedThoughtIds, reviewItems, type AppliedItem, type ReviewItem } from "./review.js";
-import type { TagField, ThoughtRow } from "../db/queries.js";
+import type { DreamRunRecord, DreamRunRow, TagField, ThoughtRow } from "../db/queries.js";
 
 export interface DreamPort {
   loadWatermark(project: string): Promise<Date>;
@@ -31,6 +31,8 @@ export interface DreamPort {
   applyMerge(canonical: CanonicalThought, sources: ThoughtRow[]): Promise<void>;
   saveProposal(project: string, items: ProposalItem[]): Promise<string>;
   saveWatermark(project: string, watermark: Date, stats: Record<string, unknown>): Promise<void>;
+  recordRun(run: DreamRunRecord): Promise<void>;
+  listRuns(project: string | undefined, limit: number): Promise<DreamRunRow[]>;
 }
 
 export interface DreamThresholds {
@@ -45,7 +47,23 @@ export interface DreamOptions {
   project?: string | null;
   ops?: DreamOp[];
   dry_run?: boolean;
+  /** Where the run came from, for reading the history back: mcp, rest, schedule. */
+  trigger?: string;
 }
+
+/**
+ * One thing a run did, or refused to do.
+ *
+ * The counts answer "how much"; a retro asks "which, and why" — why those two
+ * thoughts were merged, which pair keeps failing to judge. Refusals are logged
+ * as deliberately as changes: an operation that quietly does nothing is the
+ * hardest kind to notice going wrong.
+ */
+export type DreamAction =
+  | { kind: "vocabulary"; id: string; topics?: string[]; people?: string[] }
+  | { kind: "merge"; sources: string[] }
+  | { kind: "merge_blocked"; a: string; b: string; reason: string; detail: string }
+  | { kind: "proposed"; key: string; item_kind: string };
 
 export interface DreamResult {
   applied: Record<string, number>;
@@ -59,6 +77,8 @@ export interface DreamResult {
   items: ReviewItem[];
   /** What the immediately-applied operations did — merges, which archive rows. */
   applied_items: AppliedItem[];
+  /** Every change and every refusal, in the order they happened. */
+  actions: DreamAction[];
   watermark: { from: string; to: string };
   candidates: number;
   clusters: number;
@@ -83,6 +103,7 @@ export async function runDream(
   const ops = options.ops ?? [...DREAM_OPS];
   const dryRun = options.dry_run === true;
 
+  const actions: DreamAction[] = [];
   const applied: Record<string, number> = {};
   const proposed: Record<string, number> = {};
   const skipped: Record<string, number> = {};
@@ -135,6 +156,12 @@ export async function runDream(
       const change = planVocabularyChange(row, knownTopics, effective);
       if (!change) continue;
       bump(applied, "vocabulary");
+      actions.push({
+        kind: "vocabulary",
+        id: change.id,
+        ...(change.topics ? { topics: change.topics } : {}),
+        ...(change.people ? { people: change.people } : {}),
+      });
       if (!dryRun) await port.applyVocabulary(change);
     }
   }
@@ -159,7 +186,10 @@ export async function runDream(
     // Similarity cannot tell agreement from negation, so the judge sees every
     // cluster before anything is archived.
     const screen = await screenMergeClusters(compatible, judge);
-    if (screen.blocked > 0) skipped.merge_unscreened = screen.blocked;
+    if (screen.blocked.length > 0) skipped.merge_unscreened = screen.blocked.length;
+    for (const pair of screen.blocked) {
+      actions.push({ kind: "merge_blocked", a: pair.a, b: pair.b, reason: pair.reason, detail: pair.detail });
+    }
 
     for (const item of screen.contradictions) {
       // Refusing the merge is the half that prevents data loss, and it happens
@@ -173,6 +203,13 @@ export async function runDream(
         bump(proposed, "contradiction");
       } else {
         bump(skipped, "merge_contradicts");
+        actions.push({
+          kind: "merge_blocked",
+          a: item.a,
+          b: item.b,
+          reason: "contradiction",
+          detail: item.reason,
+        });
       }
       mergedIds.add(item.a);
       mergedIds.add(item.b);
@@ -181,6 +218,7 @@ export async function runDream(
     for (const sources of screen.mergeable) {
       bump(applied, "merge");
       appliedItems.push(mergeAudit(sources));
+      actions.push({ kind: "merge", sources: sources.map((row) => row.id) });
       for (const row of sources) mergedIds.add(row.id);
       if (!dryRun) await port.applyMerge(buildCanonical(sources, runStartedAt.toISOString()), sources);
     }
@@ -219,6 +257,11 @@ export async function runDream(
     proposalId = await port.saveProposal(project, items);
   }
 
+  const reviewable = reviewItems(items, [...byId.values()]);
+  for (const item of reviewable) {
+    actions.push({ kind: "proposed", key: item.key, item_kind: item.kind });
+  }
+
   const advanced = nextWatermark(candidates, watermark, runStartedAt, thresholds.watermarkSlackMs);
   // Thoughts left in a proposal are not settled: marking them so would stop the
   // next run selecting them, and nothing could then regenerate the items.
@@ -229,14 +272,34 @@ export async function runDream(
     await port.saveWatermark(project, settled, { applied, proposed, skipped });
   }
 
+  // Written whether or not the run changed anything, and after the writes it
+  // describes: a history missing its no-op runs cannot tell a quiet corpus from
+  // a schedule that stopped firing.
+  await port.recordRun({
+    project,
+    status: "ok",
+    dry_run: dryRun,
+    trigger: options.trigger ?? "unknown",
+    applied,
+    proposed,
+    skipped,
+    actions,
+    candidates: candidates.length,
+    clusters: mergeClusters.length,
+    proposal_id: proposalId,
+    error: null,
+    started_at: runStartedAt,
+  });
+
   return {
     applied,
     proposed,
     proposal_id: proposalId,
     // byId holds every row this run clustered, which is exactly the set the
     // items refer to — no second fetch, and none of it is re-embedded.
-    items: reviewItems(items, [...byId.values()]),
+    items: reviewable,
     applied_items: appliedItems,
+    actions,
     watermark: { from: watermark.toISOString(), to: settled.toISOString() },
     candidates: candidates.length,
     clusters: mergeClusters.length,

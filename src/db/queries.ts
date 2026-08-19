@@ -588,6 +588,88 @@ export async function listCandidatesSince(
 }
 
 /**
+ * One consolidation run, as recorded for later review.
+ *
+ * `actions` is the log a retro reads: what was merged, what was rewritten, what
+ * was refused and why. Counts say a run did four things; the log says which.
+ */
+export interface DreamRunRecord {
+  project: string;
+  status: "ok" | "failed";
+  dry_run: boolean;
+  /** Where the run came from — "schedule", "mcp", "rest" — for reading the history. */
+  trigger: string;
+  applied: Record<string, number>;
+  proposed: Record<string, number>;
+  skipped: Record<string, number>;
+  actions: unknown[];
+  candidates: number;
+  clusters: number;
+  proposal_id: string | null;
+  error: string | null;
+  started_at: Date;
+}
+
+export interface DreamRunRow extends Omit<DreamRunRecord, "started_at"> {
+  id: string;
+  started_at: Date;
+  finished_at: Date;
+}
+
+export async function insertDreamRun(pool: pg.Pool, run: DreamRunRecord): Promise<string> {
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO dream_runs
+       (project, started_at, finished_at, status, dry_run, trigger,
+        applied, proposed, skipped, actions, candidates, clusters, proposal_id, error)
+     VALUES ($1, $2, now(), $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
+     RETURNING id`,
+    [
+      run.project,
+      run.started_at,
+      run.status,
+      run.dry_run,
+      run.trigger,
+      JSON.stringify(run.applied),
+      JSON.stringify(run.proposed),
+      JSON.stringify(run.skipped),
+      JSON.stringify(run.actions),
+      run.candidates,
+      run.clusters,
+      run.proposal_id,
+      run.error,
+    ]
+  );
+
+  return rows[0]!.id;
+}
+
+/**
+ * A window of run history, newest first. Omit `project` to read every project —
+ * a retro usually asks how the runs have been going, not how one project has.
+ */
+export async function listDreamRuns(
+  pool: pg.Pool,
+  project: string | undefined,
+  limit: number
+): Promise<DreamRunRow[]> {
+  const columns = `id, project, started_at, finished_at, status, dry_run, trigger,
+                   applied, proposed, skipped, actions, candidates, clusters, proposal_id, error`;
+
+  const { rows } =
+    project === undefined
+      ? await pool.query<DreamRunRow>(
+          `SELECT ${columns} FROM dream_runs ORDER BY started_at DESC LIMIT $1`,
+          [limit]
+        )
+      : await pool.query<DreamRunRow>(
+          `SELECT ${columns} FROM dream_runs WHERE project = $1 ORDER BY started_at DESC LIMIT $2`,
+          [project, limit]
+        );
+
+  return rows;
+}
+
+/**
  * Every project bucket holding live thoughts, `''` being the no-project one.
  *
  * The scheduled dream run walks these: one run consolidates one project, and a

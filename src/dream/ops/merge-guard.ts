@@ -23,13 +23,27 @@ import type { ThoughtRow } from "../../db/queries.js";
 import { CONTRADICTION_VERDICTS, type ContradictionVerdict } from "../constants.js";
 import type { ContradictionItem, JudgePair } from "./contradiction.js";
 
+/**
+ * A pair the screen could not clear and could not propose.
+ *
+ * Recorded per pair rather than counted, because the counts do not distinguish
+ * a provider timing out repeatedly on one pair from a flake spread across the
+ * corpus — and only the first is worth acting on.
+ */
+export interface BlockedPair {
+  a: string;
+  b: string;
+  reason: "judgment_failed" | "unknown_verdict" | "missing_obsolete_id" | "unknown_obsolete_id";
+  detail: string;
+}
+
 export interface MergeScreen {
   /** Clusters the judge cleared to merge. */
   mergeable: ThoughtRow[][];
   /** Disagreements found while screening, for the proposal. */
   contradictions: ContradictionItem[];
-  /** Clusters held back with nothing to propose — failed or unusable judgments. */
-  blocked: number;
+  /** Pairs held back with nothing to propose — failed or unusable judgments. */
+  blocked: BlockedPair[];
 }
 
 function isKnownVerdict(value: unknown): value is ContradictionVerdict {
@@ -50,7 +64,7 @@ export async function screenMergeClusters(
   clusters: ThoughtRow[][],
   judge: JudgePair,
 ): Promise<MergeScreen> {
-  const screen: MergeScreen = { mergeable: [], contradictions: [], blocked: 0 };
+  const screen: MergeScreen = { mergeable: [], contradictions: [], blocked: [] };
 
   for (const cluster of clusters) {
     // A cluster merges as a unit, so one disagreement settles it: clearing the
@@ -58,6 +72,7 @@ export async function screenMergeClusters(
     // into the survivor. Stop judging as soon as that is known.
     let cleared = true;
     let proposed = false;
+    let blocked: BlockedPair | undefined;
 
     for (const [a, b] of pairsOf(cluster)) {
       let judgment;
@@ -66,6 +81,7 @@ export async function screenMergeClusters(
       } catch (err) {
         console.warn(`[dream] merge screen failed pair=${a.id},${b.id} error=${String(err)}`);
         cleared = false;
+        blocked = { a: a.id, b: b.id, reason: "judgment_failed", detail: String(err) };
         break;
       }
 
@@ -74,6 +90,12 @@ export async function screenMergeClusters(
           `[dream] merge screen blocked pair=${a.id},${b.id} reason=unknown_verdict raw=${String(judgment.verdict)}`,
         );
         cleared = false;
+        blocked = {
+          a: a.id,
+          b: b.id,
+          reason: "unknown_verdict",
+          detail: String(judgment.verdict),
+        };
         break;
       }
 
@@ -90,6 +112,7 @@ export async function screenMergeClusters(
         console.warn(
           `[dream] merge screen blocked pair=${a.id},${b.id} reason=${reason} obsolete_id=${String(obsolete)}`,
         );
+        blocked = { a: a.id, b: b.id, reason, detail: String(obsolete) };
         break;
       }
 
@@ -106,7 +129,7 @@ export async function screenMergeClusters(
     }
 
     if (cleared) screen.mergeable.push(cluster);
-    else if (!proposed) screen.blocked += 1;
+    else if (!proposed && blocked) screen.blocked.push(blocked);
   }
 
   return screen;

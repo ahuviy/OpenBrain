@@ -49,7 +49,7 @@ export async function isDatabaseReachable(): Promise<boolean> {
   }
 }
 
-const DREAM_TABLES = ["dream_proposals", "dream_state", "thoughts"] as const;
+const DREAM_TABLES = ["dream_runs", "dream_proposals", "dream_state", "thoughts"] as const;
 
 export async function connectTestDatabase(): Promise<TestDatabase> {
   const pool = new pg.Pool(databaseUrlFromEnv());

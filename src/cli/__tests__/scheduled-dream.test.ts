@@ -24,6 +24,7 @@ function result(overrides: Partial<DreamResult> = {}): DreamResult {
     proposal_id: null,
     items: [],
     applied_items: [],
+    actions: [],
     watermark: { from: "1970-01-01T00:00:00.000Z", to: "2026-08-19T00:00:00.000Z" },
     candidates: 0,
     clusters: 0,
@@ -37,6 +38,7 @@ function deps(overrides: Partial<ScheduledDreamDeps> = {}): ScheduledDreamDeps {
     listProjects: async () => ["", "markets"],
     dream: async () => result(),
     notify: vi.fn(async (_notification: Notification) => undefined),
+    recordFailure: async () => undefined,
     log: () => undefined,
     ...overrides,
   };
@@ -112,6 +114,37 @@ describe("runScheduledDream", () => {
     expect(notification.priority).toBe("urgent");
     expect(notification.message).toContain("markets");
     expect(notification.message).toContain("embedder timeout");
+  });
+
+  it("writes a failed project into the run history", async () => {
+    // runDream records its own runs, but a run that threw never got that far —
+    // and a history that only holds successes is the one that lies.
+    const recordFailure = vi.fn(async (_project: string, _error: string) => undefined);
+
+    await runScheduledDream(deps({
+      listProjects: async () => ["markets"],
+      dream: async () => {
+        throw new Error("embedder timeout");
+      },
+      recordFailure,
+    }));
+
+    expect(recordFailure).toHaveBeenCalledWith("markets", "embedder timeout");
+  });
+
+  it("does not let a broken history write hide the failure it was recording", async () => {
+    const outcome = await runScheduledDream(deps({
+      listProjects: async () => ["markets"],
+      dream: async () => {
+        throw new Error("embedder timeout");
+      },
+      recordFailure: async () => {
+        throw new Error("database gone");
+      },
+    }));
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.failures).toEqual([{ project: "markets", error: "embedder timeout" }]);
   });
 
   it("reports a total failure rather than exiting silently", async () => {

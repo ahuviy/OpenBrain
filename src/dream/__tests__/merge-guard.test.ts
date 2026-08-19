@@ -38,7 +38,7 @@ describe("screenMergeClusters", () => {
 
     expect(screen.mergeable).toEqual([[A, C]]);
     expect(screen.contradictions).toEqual([]);
-    expect(screen.blocked).toBe(0);
+    expect(screen.blocked).toEqual([]);
   });
 
   it("blocks the merge and proposes the contradiction instead", async () => {
@@ -81,9 +81,14 @@ describe("screenMergeClusters", () => {
 
     const screen = await screenMergeClusters([[A, B]], judge);
 
+    // A retro needs to know WHICH pair went unjudged and why, not that "one
+    // cluster" did: a recurring provider timeout on the same pair is a
+    // different problem from a flaky one spread across the corpus.
     expect(screen.mergeable).toEqual([]);
     expect(screen.contradictions).toEqual([]);
-    expect(screen.blocked).toBe(1);
+    expect(screen.blocked).toEqual([
+      { a: "a", b: "b", reason: "judgment_failed", detail: "Error: provider timeout" },
+    ]);
     expect(warn).toHaveBeenCalled();
   });
 
@@ -94,7 +99,9 @@ describe("screenMergeClusters", () => {
     const screen = await screenMergeClusters([[A, B]], judge);
 
     expect(screen.mergeable).toEqual([]);
-    expect(screen.blocked).toBe(1);
+    expect(screen.blocked).toEqual([
+      { a: "a", b: "b", reason: "unknown_verdict", detail: "maybe" },
+    ]);
     expect(warn).toHaveBeenCalled();
   });
 
@@ -108,7 +115,9 @@ describe("screenMergeClusters", () => {
 
     expect(screen.mergeable).toEqual([]);
     expect(screen.contradictions).toEqual([]);
-    expect(screen.blocked).toBe(1);
+    expect(screen.blocked).toEqual([
+      { a: "a", b: "b", reason: "missing_obsolete_id", detail: "undefined" },
+    ]);
     expect(warn).toHaveBeenCalled();
   });
 

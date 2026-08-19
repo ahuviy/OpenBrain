@@ -220,6 +220,73 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
       });
     });
 
+    describe("run history", () => {
+      const record = (overrides: Record<string, unknown> = {}) => ({
+        project: "markets",
+        status: "ok" as const,
+        dry_run: false,
+        trigger: "test",
+        applied: { merge: 1 },
+        proposed: {},
+        skipped: {},
+        actions: [{ kind: "merge", sources: ["a", "b"] }],
+        candidates: 2,
+        clusters: 1,
+        proposal_id: null,
+        error: null,
+        started_at: new Date("2026-08-19T03:00:00Z"),
+        ...overrides,
+      });
+
+      it("stores a run and reads it back whole", async () => {
+        await port.recordRun(record());
+
+        const [run] = await port.listRuns("markets", 10);
+
+        expect(run).toMatchObject({
+          project: "markets",
+          status: "ok",
+          dry_run: false,
+          trigger: "test",
+          candidates: 2,
+        });
+        expect(run!.actions).toEqual([{ kind: "merge", sources: ["a", "b"] }]);
+      });
+
+      it("stores a failed run with its error", async () => {
+        // The row a retro most needs: a history of successes cannot tell a
+        // clean project from one whose runs have been dying for a month.
+        await port.recordRun(record({ status: "failed", error: "embedder timeout", applied: {} }));
+
+        const [run] = await port.listRuns("markets", 10);
+
+        expect(run).toMatchObject({ status: "failed", error: "embedder timeout" });
+      });
+
+      it("returns runs newest first", async () => {
+        await port.recordRun(record({ trigger: "older", started_at: new Date("2026-08-17T03:00:00Z") }));
+        await port.recordRun(record({ trigger: "newer", started_at: new Date("2026-08-19T03:00:00Z") }));
+
+        const runs = await port.listRuns("markets", 10);
+
+        expect(runs.map((run) => run.trigger)).toEqual(["newer", "older"]);
+      });
+
+      it("bounds what it returns", async () => {
+        await port.recordRun(record());
+        await port.recordRun(record());
+
+        expect(await port.listRuns("markets", 1)).toHaveLength(1);
+      });
+
+      it("reads every project when none is named", async () => {
+        await port.recordRun(record({ project: "markets" }));
+        await port.recordRun(record({ project: "" }));
+
+        expect(await port.listRuns(undefined, 10)).toHaveLength(2);
+      });
+    });
+
     describe("proposals", () => {
       it("returns an id for a saved proposal", async () => {
         const id = await port.saveProposal("markets", [

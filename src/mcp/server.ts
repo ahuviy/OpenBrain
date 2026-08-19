@@ -26,6 +26,7 @@ import {
   batchInsertThoughts,
   type ListFilters,
   type BatchThoughtInput,
+  listDreamRuns,
 } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
 import {
@@ -96,6 +97,7 @@ export function toBatchBody(args: Record<string, unknown>): Record<string, unkno
 import { runDream } from "../dream/index.js";
 import { applyProposal } from "../dream/proposal.js";
 import { createApplyPort, createDreamPort, loadProposalReview } from "../dream/port.js";
+import { DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT } from "../dream/constants.js";
 import { getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
 import { DREAM_OPS, type DreamOp } from "../dream/constants.js";
 
@@ -323,6 +325,25 @@ export function createMcpServer(): Server {
             },
           },
           required: ["proposal_id", "accept"],
+        },
+      },
+      {
+        name: "dream_history",
+        description:
+          "Read what past dream runs did: status, counts, and the per-action log — what was merged, what was rewritten, what was refused and why.\n\n" +
+          "This is the retro view. Failed runs are recorded too, so a project whose runs have been dying is visible rather than merely quiet.",
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            project: {
+              type: "string",
+              description: "Only this project's runs. Omit for every project.",
+            },
+            limit: {
+              type: "number",
+              description: "How many runs to return, newest first (default 20, max 200).",
+            },
+          },
         },
       },
       {
@@ -688,7 +709,7 @@ export function createMcpServer(): Server {
               selfNames: discipline.selfNames,
             },
             thresholds,
-            { project: project ?? "", ops, dry_run },
+            { project: project ?? "", ops, dry_run, trigger: "mcp" },
             () => new Date(),
           );
 
@@ -711,6 +732,21 @@ export function createMcpServer(): Server {
 
           return {
             content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
+
+        // ── dream_history ──
+        case "dream_history": {
+          const project = args?.project as string | undefined;
+          const requested = typeof args?.limit === "number" ? args.limit : DEFAULT_HISTORY_LIMIT;
+          // Bounded here rather than trusted: an unbounded read of a table that
+          // only grows would eventually be the slowest thing the server does.
+          const limit = Math.min(Math.max(Math.trunc(requested), 1), MAX_HISTORY_LIMIT);
+
+          const runs = await listDreamRuns(pool, project, limit);
+
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(runs, null, 2) }],
           };
         }
 

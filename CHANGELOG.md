@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dream` now returns the proposed `items` in full, not just counts, keyed exactly
   as `dream_apply` takes them.
 
+### Added (run history)
+- `dream_runs` (migration 007) records every consolidation run — counts, the
+  `trigger` it came from, whether it was a dry run, and a per-action log of what
+  was merged, rewritten, refused and why. Failed runs are recorded too: a
+  history of successes cannot tell a clean project from one whose runs have been
+  dying. `dream_state.last_run_stats` only ever held the last run.
+- `dream_history` (REST: `GET /dream/runs`) reads that history back, newest
+  first, bounded.
+- The merge screen now reports which pair it blocked and why, rather than a
+  count — a provider failing repeatedly on one pair is a different problem from
+  a flake spread across the corpus.
+
 ### Added (scheduling)
 - `npm run dream` — an unattended run that consolidates every project, notifies
   via ntfy on success and failure, and exits non-zero when any project failed.

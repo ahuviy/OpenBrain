@@ -26,7 +26,7 @@ vi.mock("../../embedder/index.js", () => ({
 import { createMcpServer } from "../server.js";
 
 describe("MCP Server Tool Listing", () => {
-  it("registers exactly 10 tools", async () => {
+  it("registers exactly 11 tools", async () => {
     const server = createMcpServer();
 
     // Access tools via the server's internal handler
@@ -35,7 +35,7 @@ describe("MCP Server Tool Listing", () => {
     expect(handler).toBeDefined();
 
     const result = await handler({ method: "tools/list" });
-    expect(result.tools).toHaveLength(10);
+    expect(result.tools).toHaveLength(11);
 
     const toolNames = result.tools.map((t: any) => t.name).sort();
     expect(toolNames).toEqual([
@@ -44,6 +44,7 @@ describe("MCP Server Tool Listing", () => {
       "delete_thought",
       "dream",
       "dream_apply",
+      "dream_history",
       "dream_review",
       "list_thoughts",
       "search_thoughts",
@@ -84,6 +85,17 @@ describe("MCP Server Tool Listing", () => {
 
     expect(dream.description).toMatch(/one project at a time/i);
     expect(dream.inputSchema.properties.project.description).toMatch(/thoughts with no project/i);
+  });
+
+  it("dream_history reads without arguments, so a retro can just ask", async () => {
+    const server = createMcpServer();
+    const handler = (server as any)._requestHandlers?.get("tools/list");
+    const result = await handler({ method: "tools/list" });
+
+    const history = result.tools.find((t: any) => t.name === "dream_history");
+
+    expect(history.inputSchema.required ?? []).toEqual([]);
+    expect(Object.keys(history.inputSchema.properties).sort()).toEqual(["limit", "project"]);
   });
 
   it("dream exposes exactly the four known operations", async () => {

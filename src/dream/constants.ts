@@ -20,3 +20,7 @@ export {
   CONTRADICTION_VERDICTS,
   type ContradictionVerdictName as ContradictionVerdict,
 } from "../embedder/types.js";
+
+/** Run-history window sizes. Bounded because dream_runs only ever grows. */
+export const DEFAULT_HISTORY_LIMIT = 20;
+export const MAX_HISTORY_LIMIT = 200;

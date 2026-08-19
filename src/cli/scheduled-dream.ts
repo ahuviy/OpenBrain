@@ -20,6 +20,12 @@ export interface ScheduledDreamDeps {
   listProjects(): Promise<string[]>;
   dream(project: string): Promise<DreamResult>;
   notify(notification: Notification): Promise<void>;
+  /**
+   * Writes a project that threw into the run history. runDream records its own
+   * runs, but a run that threw never reached that point — and a history holding
+   * only successes is the one that lies.
+   */
+  recordFailure(project: string, error: string): Promise<void>;
   log(line: string): void;
 }
 
@@ -102,6 +108,13 @@ export async function runScheduledDream(deps: ScheduledDreamDeps): Promise<Sched
       // run is two days away.
       failures.push({ project, error: messageOf(err) });
       deps.log(`[dream] ${label(project)} failed — ${messageOf(err)}`);
+
+      try {
+        await deps.recordFailure(project, messageOf(err));
+      } catch (recordErr) {
+        // Losing the history entry must not lose the failure it was recording.
+        deps.log(`[dream] could not record the failure — ${messageOf(recordErr)}`);
+      }
     }
   }
 

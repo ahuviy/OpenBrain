@@ -396,6 +396,39 @@ it**: an unreviewed proposal holds the watermark back and its pairs are re-judge
 With `contradiction` off the destructive half is still safe — a merge the judge blocks stays
 blocked, and the count reaches you in the ntfy summary as `skipped: merge_contradicts N`.
 
+### `dream_history`
+
+What past runs did — the retro view. One row per project per run, including **failed** runs, so a
+project whose consolidation has been dying for a month is visible rather than merely quiet.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `project` | string | Only this project's runs. Omit for every project |
+| `limit` | number | Runs to return, newest first (default 20, max 200) |
+
+Each row carries the counts (`applied`, `proposed`, `skipped`), the `trigger` (`mcp`, `rest`,
+`schedule`), whether it was a `dry_run`, and an `actions` log — the part counts cannot give you:
+
+```json
+{
+  "status": "ok",
+  "trigger": "schedule",
+  "applied": { "vocabulary": 5, "merge": 1 },
+  "skipped": { "merge_contradicts": 1 },
+  "actions": [
+    { "kind": "vocabulary", "id": "a1b2…", "people": ["Dohmen"] },
+    { "kind": "merge", "sources": ["c3d4…", "e5f6…"] },
+    { "kind": "merge_blocked", "a": "g7h8…", "b": "i9j0…", "reason": "contradiction",
+      "detail": "one forbids what the other prescribes" },
+    { "kind": "proposed", "key": "contradiction:1", "item_kind": "contradiction" }
+  ]
+}
+```
+
+`merge_blocked` is the entry worth watching: `reason: "contradiction"` means two of your thoughts
+disagree and nothing was done about it, while `judgment_failed` repeating on the same pair means the
+provider — not the corpus — is the problem.
+
 ### `dream_review`
 
 Read a proposal back without deciding anything — every item with its key, the thoughts behind it,
@@ -436,8 +469,8 @@ Proposals expire (`DREAM_PROPOSAL_TTL_HOURS`, default 72h) and an expired one is
 { "applied": ["contradiction:1"], "rejected": ["synthesis:1"], "status": "applied" }
 ```
 
-All three have REST twins: `POST /dream`, `GET /dream/proposals/:id`, and `POST /dream/apply` — same
-shapes, same responses. The review twin is a GET because reading a proposal changes nothing.
+All four have REST twins: `POST /dream`, `GET /dream/runs`, `GET /dream/proposals/:id`, and
+`POST /dream/apply` — same shapes, same responses. The review twin is a GET because reading a proposal changes nothing.
 
 ### `thought_stats`
 

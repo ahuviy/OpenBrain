@@ -14,7 +14,7 @@
  */
 
 import { closePool, getPool } from "../db/connection.js";
-import { listProjects } from "../db/queries.js";
+import { insertDreamRun, listProjects } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
 import { getDisciplineConfig } from "../capture/discipline.js";
 import { runDream } from "../dream/index.js";
@@ -56,9 +56,26 @@ async function main(): Promise<void> {
           selfNames: discipline.selfNames,
         },
         getDreamThresholds(),
-        { project, ops },
+        { project, ops, trigger: "schedule" },
         () => new Date(),
       ),
+    recordFailure: async (project, error) => {
+      await insertDreamRun(pool, {
+        project,
+        status: "failed",
+        dry_run: false,
+        trigger: "schedule",
+        applied: {},
+        proposed: {},
+        skipped: {},
+        actions: [],
+        candidates: 0,
+        clusters: 0,
+        proposal_id: null,
+        error,
+        started_at: new Date(),
+      });
+    },
     notify: async (notification) => {
       await sendNotification(notification);
     },

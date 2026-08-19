@@ -9,7 +9,7 @@ import { runDream } from "../dream/index.js";
 import { applyProposal } from "../dream/proposal.js";
 import { createApplyPort, createDreamPort, loadProposalReview } from "../dream/port.js";
 import { getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
-import type { DreamOp } from "../dream/constants.js";
+import { DEFAULT_HISTORY_LIMIT, MAX_HISTORY_LIMIT, type DreamOp } from "../dream/constants.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -28,6 +28,7 @@ import {
   searchThoughtsBySource,
   type ListFilters,
   type BatchThoughtInput,
+  listDreamRuns,
 } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
 import {
@@ -605,7 +606,7 @@ export function createApi(): Hono {
           selfNames: discipline.selfNames,
         },
         getDreamThresholds(),
-        { project: body.project ?? "", ops: body.ops, dry_run: body.dry_run === true },
+        { project: body.project ?? "", ops: body.ops, dry_run: body.dry_run === true, trigger: "rest" },
         () => new Date(),
       );
 
@@ -614,6 +615,23 @@ export function createApi(): Hono {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[api] Dream failed:", message);
       return c.json({ error: "Dream failed", detail: message }, 500);
+    }
+  });
+
+  // The retro view: what past runs did, newest first.
+  app.get("/dream/runs", async (c) => {
+    try {
+      const project = c.req.query("project");
+      const requested = Number(c.req.query("limit") ?? DEFAULT_HISTORY_LIMIT);
+      const limit = Number.isFinite(requested)
+        ? Math.min(Math.max(Math.trunc(requested), 1), MAX_HISTORY_LIMIT)
+        : DEFAULT_HISTORY_LIMIT;
+
+      return c.json(await listDreamRuns(pool, project, limit));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[api] Dream history failed:", message);
+      return c.json({ error: "Dream history failed", detail: message }, 500);
     }
   });
 
