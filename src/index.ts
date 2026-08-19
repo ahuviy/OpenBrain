@@ -15,7 +15,7 @@
 
 import { serve } from "@hono/node-server";
 
-import { initializeDatabase, closePool } from "./db/connection.js";
+import { initializeDatabase, closePool, migrationsSettled } from "./db/connection.js";
 import { createApi } from "./api/routes.js";
 import { createMcpHttpApp } from "./mcp/http-app.js";
 
@@ -71,17 +71,19 @@ process.on("uncaughtException", (err) => {
 });
 
 // Graceful shutdown
-process.on("SIGINT", async () => {
-  console.log("\n[shutdown] Received SIGINT, closing...");
+// Migrations run in the background (see initializeDatabase), so a signal can
+// arrive while one is mid-flight. Exiting then leaves knex_migrations_lock held
+// by a process that no longer exists, and the next boot blocks on it.
+async function shutdown(signal: string): Promise<never> {
+  console.log(`\n[shutdown] Received ${signal}, closing...`);
+  await migrationsSettled();
   await closePool();
   process.exit(0);
-});
+}
 
-process.on("SIGTERM", async () => {
-  console.log("\n[shutdown] Received SIGTERM, closing...");
-  await closePool();
-  process.exit(0);
-});
+process.on("SIGINT", () => void shutdown("SIGINT"));
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 main().catch((err) => {
   console.error("[fatal]", err);

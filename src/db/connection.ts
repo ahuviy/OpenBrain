@@ -39,18 +39,38 @@ export function getPool(): pg.Pool {
   return pool;
 }
 
+/** Tracks the in-flight background migration so shutdown can wait for it. */
+let migrations: Promise<void> | null = null;
+
 /**
- * Brings the schema up to date, then proves the pool can talk to it.
+ * Starts the migrations and proves the pool can talk to the database.
  *
- * Migrations run here rather than in a platform release command because every
- * deploy target boots through this function and only one of them (Azure) had a
- * migration step at all — which is how production ran without the dream tables
- * migration 006 creates. Startup fails loudly if a migration fails: serving MCP
- * traffic against a half-migrated schema turns one clear error into many
- * confusing ones.
+ * Migrations run here because every deploy target boots through this function
+ * and only one of them (Azure) had a migration step at all — which is how
+ * production ran without the dream tables migration 006 creates.
+ *
+ * They are deliberately NOT awaited. Blocking the servers on a migration means
+ * a cold machine does not bind its port until the migration finishes, and on
+ * Fly that is a failed health check on every boot. The connectivity check below
+ * still blocks: a database the pool cannot reach at all is a startup failure,
+ * while a schema that is one migration behind is a transient state.
+ *
+ * That window — new code, old schema — is the standing constraint on every
+ * migration in db/knex-migrations: each one must leave the schema readable by
+ * both the running code and the incoming code. Expand, deploy, contract; never
+ * drop or rename a column in the same release that stops using it.
+ *
+ * A migration that fails is logged, not fatal. It has not applied (knex runs
+ * each in a transaction), the previous schema is intact, and taking the process
+ * down would trade a subset of failing tools for a hard outage.
  */
 export async function initializeDatabase(): Promise<void> {
-  await runMigrations();
+  migrations = runMigrations().then(
+    () => undefined,
+    (err: unknown) => {
+      console.error("[db] Migrations failed:", err instanceof Error ? err.stack ?? err.message : String(err));
+    }
+  );
 
   const db = getPool();
   const client = await db.connect();
@@ -61,6 +81,17 @@ export async function initializeDatabase(): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Resolves once the background migration has finished, successfully or not.
+ *
+ * Shutdown awaits this. Killing the process mid-migration leaves knex's row in
+ * `knex_migrations_lock` held, and the next boot then blocks on a lock whose
+ * owner is gone — a worse failure than the few seconds spent waiting here.
+ */
+export function migrationsSettled(): Promise<void> {
+  return migrations ?? Promise.resolve();
 }
 
 export async function closePool(): Promise<void> {

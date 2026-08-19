@@ -52,7 +52,7 @@ All four of these have **pgvector built in** and a free tier that fits a persona
 
 5. Apply the migrations in [`db/migrations/`](../db/migrations/) in order, same way.
 
-   > The knex migrations (`db/knex-migrations/`, 004 onward) do **not** need to be pasted — the app applies any pending ones itself on startup. The DB user in your connection string therefore needs DDL rights on `public`; the Supabase `postgres` user has them.
+   > The knex migrations (`db/knex-migrations/`, 004 onward) do **not** need to be pasted — the app applies any pending ones itself, in the background, on startup. The DB user in your connection string therefore needs DDL rights on `public`; the Supabase `postgres` user has them.
 
 6. **Settings → Database → Connection string → URI**. Copy it. It looks like:
 

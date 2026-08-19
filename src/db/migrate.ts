@@ -8,7 +8,9 @@
  * with `relation "dream_state" does not exist`.
  *
  * Migrating on startup fixes every deploy target at once rather than one
- * platform's config file. It is safe to repeat: knex records applied migrations
+ * platform's config file. The call is not awaited — see initializeDatabase in
+ * connection.ts for why, and for the compatibility rule that buys. It is safe
+ * to repeat: knex records applied migrations
  * in `knex_migrations` and takes a row lock in `knex_migrations_lock`, so a
  * second machine booting concurrently waits instead of applying twice.
  *

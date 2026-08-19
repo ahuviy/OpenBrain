@@ -1,11 +1,17 @@
 /**
- * Unit tests for src/db/connection.ts bootstrap order.
+ * Unit tests for src/db/connection.ts bootstrap.
  *
- * initializeDatabase is the one place every deploy target passes through on the
- * way up, which is why the migrations run from here rather than from a
- * platform-specific release command. The order matters: the readiness query
- * runs against the migrated schema, so a migration failure surfaces as itself
- * instead of as a missing relation later.
+ * Migrations run from here — the one place every deploy target passes through
+ * on the way up — but they do NOT block the servers from listening. A cold Fly
+ * machine that must finish a migration before binding its port fails its own
+ * health check on the way up, and the fix for that belongs in code every target
+ * shares rather than in one platform's release command.
+ *
+ * The cost of not blocking is a window where the code is newer than the schema,
+ * which is why migrations here must stay backwards and forwards compatible:
+ * expand, deploy, contract. These tests pin the two properties that window
+ * depends on — startup never waits, and a failed migration never takes the
+ * process down with it.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -25,29 +31,72 @@ vi.mock("pg", () => ({
 
 vi.mock("../migrate.js", () => ({ runMigrations }));
 
-const { initializeDatabase, closePool } = await import("../connection.js");
+const { initializeDatabase, closePool, migrationsSettled } = await import("../connection.js");
+
+/** A promise plus its resolvers, so a test can hold a migration open. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("initializeDatabase", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     query.mockClear();
     runMigrations.mockClear();
     runMigrations.mockResolvedValue([]);
+    vi.restoreAllMocks();
+    await closePool();
   });
 
-  it("migrates before querying the schema", async () => {
+  it("starts the migrations", async () => {
     await initializeDatabase();
+    await migrationsSettled();
 
     expect(runMigrations).toHaveBeenCalledOnce();
-    expect(runMigrations.mock.invocationCallOrder[0] ?? Infinity).toBeLessThan(
-      query.mock.invocationCallOrder[0] ?? 0,
-    );
-    await closePool();
   });
 
-  it("fails startup when migrations fail", async () => {
+  it("returns without waiting for the migrations to finish", async () => {
+    const migration = deferred<string[]>();
+    runMigrations.mockReturnValueOnce(migration.promise);
+
+    await initializeDatabase();
+
+    // Resolving only after initializeDatabase has already returned is the whole
+    // point: an awaited migration would have deadlocked this test instead.
+    expect(query).toHaveBeenCalled();
+    migration.resolve([]);
+    await migrationsSettled();
+  });
+
+  it("stays up when a migration fails, and says so", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     runMigrations.mockRejectedValueOnce(new Error("permission denied for schema public"));
 
-    await expect(initializeDatabase()).rejects.toThrow("permission denied");
+    await expect(initializeDatabase()).resolves.toBeUndefined();
+    await expect(migrationsSettled()).resolves.toBeUndefined();
+
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("[db] Migrations failed"),
+      expect.stringContaining("permission denied for schema public"),
+    );
+  });
+
+  it("still fails startup when the database itself is unreachable", async () => {
+    connect.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+    await expect(initializeDatabase()).rejects.toThrow("ECONNREFUSED");
+    await migrationsSettled();
+  });
+});
+
+describe("migrationsSettled", () => {
+  it("resolves immediately when no migration has been started", async () => {
     await closePool();
+    await expect(migrationsSettled()).resolves.toBeUndefined();
   });
 });

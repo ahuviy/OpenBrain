@@ -147,6 +147,11 @@ here — it has drifted once already.
   mention is a field you drop — that is how a merge silently discarded the `provenance` an importer
   matches on. See `docs/retros/2026-08-19-dream-consolidation-retro.md`.
 - **Write rules belong on the server, not in a prompt.** Anything that keeps the brain clean (dedupe, type discipline, tag vocabulary) goes in `src/capture/` so it binds on every transport — a phone client cannot run a hook or a checklist. Tool descriptions restate the rules for the model; they never substitute for them.
+- **Migrations must be backwards and forwards compatible.** The app applies pending knex migrations
+  in the background at boot and starts serving immediately, so there is always a window where the
+  running code is older than the schema and the incoming code is newer. Expand, deploy, contract:
+  add nullable columns and new tables freely; never drop or rename one in the same release that
+  stops using it.
 - **No new direct deps without justification.** This codebase intentionally has few dependencies. Prefer std lib + `pg` + the MCP SDK.
 - **Tests live next to code** (`src/foo/__tests__/foo.test.ts`), except integration tests which live in `src/__integration__/`.
 
