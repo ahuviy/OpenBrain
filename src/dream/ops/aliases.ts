@@ -165,3 +165,61 @@ export function inferAliases(counts: VocabularyCounts): InferredAliases {
     variants: { topics: topicVariants, people: personVariants },
   };
 }
+
+/**
+ * Combines inferred aliases with the configured table, keeping the result
+ * loop-free.
+ *
+ * Config is authoritative — someone wrote it down — and inference is a rule of
+ * thumb about spelling, computed from whatever a project happens to contain. A
+ * full-corpus dry run found the collision this exists to stop: config maps
+ * `dohmen` to "Bert Dohmen", while a project where "Dohmen" is the commoner
+ * spelling infers `bert dohmen` to "Dohmen". Merged naively, each rewrites the
+ * other's rows on every run — the vocabulary pass would never converge and the
+ * run summary would report changes forever.
+ *
+ * Three inferred entries are therefore dropped: one whose variant config has
+ * already spoken about, one whose variant IS a configured canonical (rewriting
+ * it undoes the config), and one whose canonical config rewrites again (the
+ * resolver does not re-resolve, so the row would keep a stale value).
+ */
+export function mergeAliases(
+  inferred: Record<string, string>,
+  configured: Record<string, string>,
+): Record<string, string> {
+  const canonicals = new Set(Object.values(configured).map((value) => value.toLowerCase()));
+  const merged: Record<string, string> = { ...configured };
+
+  for (const [variant, canonical] of Object.entries(inferred)) {
+    if (variant in configured) continue;
+    if (canonicals.has(variant.toLowerCase())) continue;
+    if (canonical.toLowerCase() in configured) continue;
+    // Defensive: a self-cycle inside the inferred set would churn rows too.
+    if (inferred[canonical.toLowerCase()] !== undefined) continue;
+    merged[variant] = canonical;
+  }
+
+  return merged;
+}
+
+/**
+ * The stored spellings an alias map would rewrite.
+ *
+ * Driven by the EFFECTIVE map rather than by what inference proposed, because a
+ * configured alias needs exactly the same sweep and never got one: config could
+ * rename a person for new captures while every thought written before it kept
+ * the old spelling forever.
+ *
+ * Stored spellings, not normalised keys: the tag lookup compares what is in the
+ * row, so `dohmen` finds nothing and `Dohmen` finds the rows.
+ */
+export function staleSpellings(
+  counts: Record<string, number>,
+  aliases: Record<string, string>,
+  key: (spelling: string) => string,
+): string[] {
+  return Object.keys(counts).filter((spelling) => {
+    const canonical = aliases[key(spelling)];
+    return canonical !== undefined && canonical !== spelling;
+  });
+}

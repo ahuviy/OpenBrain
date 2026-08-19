@@ -7,12 +7,13 @@
  * so a client cannot skip the rules by choosing a different port.
  */
 
+import { normaliseTopic } from "../capture/discipline.js";
 import { clusterByEdges, type SimilarityEdge } from "./cluster.js";
 import { DREAM_OPS, type DreamOp } from "./constants.js";
 import { holdBackWatermark, nextWatermark, type CandidateRow } from "./candidates.js";
 import { buildCanonical, canMerge, type CanonicalThought } from "./ops/merge.js";
 import { planVocabularyChange, type VocabularyChange, type VocabularyConfig } from "./ops/vocabulary.js";
-import { inferAliases, type VocabularyCounts } from "./ops/aliases.js";
+import { inferAliases, mergeAliases, staleSpellings, type VocabularyCounts } from "./ops/aliases.js";
 import { screenMergeClusters } from "./ops/merge-guard.js";
 import { dropConflictingItems } from "./consistency.js";
 import { planContradictionItems, type JudgePair } from "./ops/contradiction.js";
@@ -165,13 +166,15 @@ export async function runDream(
     // Aliases are inferred from the whole project's vocabulary, not from the
     // run's candidates: the spelling to keep is the one the brain already uses
     // most, and the candidates are a recent slice that says nothing about that.
-    const inferred = inferAliases(await port.vocabularyCounts(project));
+    const counts = await port.vocabularyCounts(project);
+    const inferred = inferAliases(counts);
 
-    // Config last: an alias someone wrote down is a decision, while inference is
-    // a rule of thumb about spelling.
+    // Merged rather than spread: config is authoritative, and an inferred alias
+    // that rewrites a configured canonical back the other way makes the two
+    // churn the same rows on every run. See mergeAliases.
     const effective: VocabularyConfig = {
-      topicAliases: { ...inferred.topicAliases, ...config.topicAliases },
-      personAliases: { ...inferred.personAliases, ...config.personAliases },
+      topicAliases: mergeAliases(inferred.topicAliases, config.topicAliases),
+      personAliases: mergeAliases(inferred.personAliases, config.personAliases),
       selfNames: config.selfNames,
     };
 
@@ -180,8 +183,8 @@ export async function runDream(
     // spellings survive the pass named for unifying them.
     const sweep = new Map<string, ThoughtRow>(candidates.map((row) => [row.id, row]));
     for (const [field, variants] of [
-      ["topics", inferred.variants.topics],
-      ["people", inferred.variants.people],
+      ["topics", staleSpellings(counts.topics, effective.topicAliases, normaliseTopic)],
+      ["people", staleSpellings(counts.people, effective.personAliases, (v) => v.trim().toLowerCase())],
     ] as const) {
       for (const row of await port.listTagged(field, variants, project)) {
         if (!sweep.has(row.id)) sweep.set(row.id, row);

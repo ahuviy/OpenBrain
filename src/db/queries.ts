@@ -700,11 +700,16 @@ function assertTagField(field: TagField): void {
 }
 
 /**
- * How often each topic and person appears in a project's live thoughts.
+ * How often each topic and person appears in the brain's live thoughts.
  *
- * Dream infers aliases from this: the spelling the brain already uses most wins,
- * so unifying rewrites the fewest rows. Archived thoughts are excluded — they
- * are not part of the vocabulary anyone searches.
+ * Dream infers aliases from this: the spelling already used most wins, so
+ * unifying rewrites the fewest rows. Archived thoughts are excluded — they are
+ * not part of the vocabulary anyone searches.
+ *
+ * Topics are counted within the project, people across all of them. A topic is
+ * a project's own vocabulary, but a person is the same person everywhere;
+ * counting people per project let one project settle on "Dohmen" while another
+ * settled on "Bert Dohmen", and the two then rewrote each other's rows.
  */
 export async function countVocabulary(
   pool: pg.Pool,
@@ -719,7 +724,7 @@ export async function countVocabulary(
                  THEN metadata->f.field ELSE '[]'::jsonb END
           ) AS v(value)
      WHERE archived = false
-       AND COALESCE(project, '') = $1
+       AND (f.field = 'people' OR COALESCE(project, '') = $1)
      GROUP BY field, value`,
     [project]
   );

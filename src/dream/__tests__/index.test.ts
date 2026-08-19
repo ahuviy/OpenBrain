@@ -285,6 +285,34 @@ describe("runDream", () => {
     expect(recorded.changes).toEqual([]);
   });
 
+  it("never emits an alias pair that rewrites config back the other way", async () => {
+    // The full-corpus dry run's finding: config says dohmen -> "Bert Dohmen",
+    // inference in a project where "Dohmen" dominates says the reverse, and the
+    // pair churns the same rows on every run.
+    const tagged = [
+      candidate("old", { metadata: { people: ["Bert Dohmen"] } }) as ThoughtRow,
+      candidate("older", { metadata: { people: ["Dohmen"] } }) as ThoughtRow,
+    ];
+    const { port, recorded } = fakePort([], {}, {
+      counts: { topics: {}, people: { Dohmen: 7, "Bert Dohmen": 3 } },
+      tagged,
+    });
+
+    await runDream(
+      port,
+      judgeIndependent,
+      synthesise,
+      { ...config, personAliases: { dohmen: "Bert Dohmen" } },
+      thresholds,
+      {},
+      now,
+    );
+
+    // Only the configured direction survives: "Dohmen" becomes "Bert Dohmen",
+    // and nothing rewrites "Bert Dohmen" back.
+    expect(recorded.changes).toEqual([{ id: "older", people: ["Bert Dohmen"] }]);
+  });
+
   it("lets a configured alias override an inferred one", async () => {
     // Config is someone's decision; inference is a rule of thumb about spelling.
     const tagged = [candidate("old", { metadata: { people: ["Bert Dohmen"] } }) as ThoughtRow];

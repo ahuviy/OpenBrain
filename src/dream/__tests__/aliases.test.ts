@@ -13,7 +13,13 @@
 
 import { describe, it, expect } from "vitest";
 
-import { inferAliases, inferPersonAliases, inferTopicAliases } from "../ops/aliases.js";
+import {
+  inferAliases,
+  inferPersonAliases,
+  inferTopicAliases,
+  mergeAliases,
+  staleSpellings,
+} from "../ops/aliases.js";
 
 describe("inferTopicAliases", () => {
   it("folds a plural into the singular the brain uses more", () => {
@@ -144,5 +150,74 @@ describe("inferAliases variants", () => {
       topics: [],
       people: [],
     });
+  });
+});
+
+describe("mergeAliases", () => {
+  // Found by a full-corpus dry run: config/discipline.json says
+  // dohmen -> "Bert Dohmen", while inference in a project where "Dohmen" is the
+  // commoner spelling produced "bert dohmen" -> "Dohmen". Merged, those two
+  // rewrite each other's rows on every run, forever.
+  it("drops an inferred alias that would rewrite a configured canonical", () => {
+    const inferred = { "bert dohmen": "Dohmen" };
+    const configured = { dohmen: "Bert Dohmen" };
+
+    expect(mergeAliases(inferred, configured)).toEqual({ dohmen: "Bert Dohmen" });
+  });
+
+  it("keeps config when both name the same variant", () => {
+    const inferred = { dohmen: "B. Dohmen" };
+    const configured = { dohmen: "Bert Dohmen" };
+
+    expect(mergeAliases(inferred, configured)).toEqual({ dohmen: "Bert Dohmen" });
+  });
+
+  it("drops an inferred alias pointing at something config rewrites again", () => {
+    // markets -> markets-analysis -> ... : a two-hop rewrite lands on a value
+    // the resolver never re-resolves, so the row keeps a stale tag.
+    const inferred = { "market-data": "markets" };
+    const configured = { markets: "market-analysis" };
+
+    expect(mergeAliases(inferred, configured)).toEqual({ markets: "market-analysis" });
+  });
+
+  it("keeps inferred aliases config says nothing about", () => {
+    const inferred = { workflows: "workflow" };
+    const configured = { markets: "market-analysis" };
+
+    expect(mergeAliases(inferred, configured)).toEqual({
+      workflows: "workflow",
+      markets: "market-analysis",
+    });
+  });
+
+  it("drops an inferred pair that cycles with itself", () => {
+    // Defensive: inference should never produce this, and a cycle that reached
+    // the resolver would churn rows on every run.
+    expect(mergeAliases({ a: "b", b: "a" }, {})).toEqual({});
+  });
+});
+
+describe("staleSpellings", () => {
+  const lower = (value: string) => value.trim().toLowerCase();
+
+  // Which STORED spellings a sweep must fetch. Driven by the effective alias
+  // map, not by what inference proposed: a configured alias needs the same
+  // sweep, and before this it never got one — config could rename a person for
+  // new captures while every old thought kept the old spelling forever.
+  it("names the stored spellings an alias would rewrite", () => {
+    const counts = { Dohmen: 7, "Bert Dohmen": 3 };
+
+    expect(staleSpellings(counts, { dohmen: "Bert Dohmen" }, lower)).toEqual(["Dohmen"]);
+  });
+
+  it("ignores a spelling that already equals its canonical", () => {
+    const counts = { "Bert Dohmen": 3 };
+
+    expect(staleSpellings(counts, { "bert dohmen": "Bert Dohmen" }, lower)).toEqual([]);
+  });
+
+  it("ignores spellings no alias mentions", () => {
+    expect(staleSpellings({ Faber: 2 }, { dohmen: "Bert Dohmen" }, lower)).toEqual([]);
   });
 });

@@ -171,11 +171,22 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
         expect(counts.people).toEqual({ Dohmen: 1, "Bert Dohmen": 1 });
       });
 
-      it("counts one project's vocabulary, not another's", async () => {
+      it("counts one project's TOPIC vocabulary, not another's", async () => {
         await driver.seed({ content: "one", project: "markets", metadata: { topics: ["markets"] } });
         await driver.seed({ content: "two", project: "other", metadata: { topics: ["markets"] } });
 
         expect((await port.vocabularyCounts("markets")).topics.markets).toBe(1);
+      });
+
+      it("counts PEOPLE across every project", async () => {
+        // A person is the same person in every project; topics are a project's
+        // own vocabulary. Counting people per project let one project settle on
+        // "Dohmen" while another settled on "Bert Dohmen" — found by a
+        // full-corpus dry run, where the two then rewrote each other's rows.
+        await driver.seed({ content: "one", project: "markets", metadata: { people: ["Dohmen"] } });
+        await driver.seed({ content: "two", project: "investing", metadata: { people: ["Dohmen"] } });
+
+        expect((await port.vocabularyCounts("markets")).people.Dohmen).toBe(2);
       });
 
       it("ignores archived thoughts, which nobody searches", async () => {

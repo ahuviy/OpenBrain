@@ -76,9 +76,12 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
     async vocabularyCounts(project) {
       const counts = { topics: {} as Record<string, number>, people: {} as Record<string, number> };
       for (const row of thoughts) {
-        if (row.archived || bucket(row.project) !== project) continue;
+        if (row.archived) continue;
         const metadata = row.metadata as Record<string, unknown>;
         for (const field of ["topics", "people"] as const) {
+          // Topics are a project's own vocabulary; a person is the same person
+          // in every project. Mirrors countVocabulary.
+          if (field === "topics" && bucket(row.project) !== project) continue;
           const values = metadata[field];
           if (!Array.isArray(values)) continue;
           for (const value of values) {
