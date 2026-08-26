@@ -485,6 +485,7 @@ export function createApi(): Hono {
         type: metadata.type,
         topics: metadata.topics,
         content: result.content,
+        updated_at: result.updated_at.toISOString(),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

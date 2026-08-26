@@ -356,20 +356,26 @@ export async function getThoughtStats(
 
 // ─── Update ──────────────────────────────────────────────────────────
 
+/** `ThoughtRow` plus the stamp the `set_updated_at` trigger just wrote. Reporting
+ *  `created_at` in its place makes every edit look like it never happened. */
+export interface UpdatedThoughtRow extends ThoughtRow {
+  updated_at: Date;
+}
+
 export async function updateThought(
   pool: pg.Pool,
   id: string,
   content: string,
   embedding: number[],
   metadata: ThoughtMetadata
-): Promise<ThoughtRow> {
+): Promise<UpdatedThoughtRow> {
   const embeddingStr = `[${embedding.join(",")}]`;
 
-  const { rows, rowCount } = await pool.query<ThoughtRow>(
+  const { rows, rowCount } = await pool.query<UpdatedThoughtRow>(
     `UPDATE thoughts
      SET content = $2, embedding = $3::vector, metadata = $4::jsonb
      WHERE id = $1
-     RETURNING id, content, metadata, project, archived, supersedes, created_at`,
+     RETURNING id, content, metadata, project, archived, supersedes, created_at, updated_at`,
     [id, content, embeddingStr, JSON.stringify(metadata)]
   );
 

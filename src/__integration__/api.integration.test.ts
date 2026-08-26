@@ -333,6 +333,30 @@ describe("Update", () => {
     expect(body.content).toContain("50k vectors");
   });
 
+  it("stamps updated_at at the edit, not at the capture", async () => {
+    const { body: created } = await api("/memories", {
+      method: "POST",
+      body: JSON.stringify({
+        content: "Edit-stamp probe: the retention window for audit rows is ninety days.",
+        type: "reference",
+        project: TEST_PROJECT,
+      }),
+    });
+    createdIds.push(created.id);
+
+    const { status, body } = await api(`/memories/${created.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        content: "Edit-stamp probe: the retention window for audit rows is one hundred and eighty days.",
+      }),
+    });
+
+    expect(status).toBe(200);
+    expect(new Date(body.updated_at).getTime()).toBeGreaterThan(
+      new Date(created.captured_at).getTime()
+    );
+  });
+
   it("returns 404 for nonexistent thought", async () => {
     const { status } = await api("/memories/00000000-0000-0000-0000-000000000000", {
       method: "PUT",

@@ -820,7 +820,7 @@ export function createMcpServer(): Server {
                     id: result.id,
                     type: metadata.type,
                     topics: metadata.topics,
-                    updated_at: result.created_at.toISOString(),
+                    updated_at: result.updated_at.toISOString(),
                   },
                   null,
                   2

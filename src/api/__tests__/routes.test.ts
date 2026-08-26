@@ -211,11 +211,14 @@ describe("REST API Routes", () => {
   // ─── PUT /memories/:id ─────────────────────────────────────────────
 
   it("PUT /memories/:id returns updated thought", async () => {
+    const created_at = new Date("2026-08-13T05:31:31.993Z");
+    const updated_at = new Date("2026-08-25T14:02:00.000Z");
     mockUpdateThought.mockResolvedValueOnce({
       id: "a1b2c3d4-1234-5678-9abc-def012345678",
       content: "updated content",
       metadata: { type: "decision" },
-      created_at: new Date(),
+      created_at,
+      updated_at,
     });
 
     const res = await app.request("/memories/a1b2c3d4-1234-5678-9abc-def012345678", {
@@ -225,9 +228,11 @@ describe("REST API Routes", () => {
     });
 
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; id: string };
+    const body = (await res.json()) as { status: string; id: string; updated_at: string };
     expect(body.status).toBe("updated");
     expect(body.id).toBe("a1b2c3d4-1234-5678-9abc-def012345678");
+    expect(body.updated_at).toBe(updated_at.toISOString());
+    expect(body.updated_at).not.toBe(created_at.toISOString());
   });
 
   it("PUT /memories/:id returns 404 when not found", async () => {

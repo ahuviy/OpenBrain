@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two-day cadence.
 
 ### Fixed
+- `update_thought` (REST: `PUT /memories/:id`) reports the time of the edit in
+  `updated_at`. It returned the thought's `created_at` instead, so an edit was
+  indistinguishable from a capture and edit recency could not be sorted on. The
+  column and its `set_updated_at` trigger were always correct — the update query
+  simply never selected them back.
 - Knex migrations (004+) are applied at startup. Nothing on the hosted path ever
   ran them — no release command, no entrypoint step — so production was missing
   every table from migration 004 onward, and `dream` failed with

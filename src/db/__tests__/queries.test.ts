@@ -667,3 +667,33 @@ describe("findOpenProposal", () => {
     await expect(findOpenProposal(pool, "")).resolves.toBeUndefined();
   });
 });
+
+// ─── updateThought: the edit stamp ──────────────────────────────────
+
+describe("updateThought edit stamp", () => {
+  it("returns updated_at, so an edit is distinguishable from the capture", async () => {
+    const { pool, mockQuery } = createMockPool();
+    const created_at = new Date("2026-08-13T05:31:31.993Z");
+    const updated_at = new Date("2026-08-25T14:02:00.000Z");
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: "abc-123",
+        content: "updated",
+        metadata: {},
+        project: null,
+        archived: false,
+        supersedes: null,
+        created_at,
+        updated_at,
+      }],
+      rowCount: 1,
+    });
+
+    const result = await updateThought(pool, "abc-123", "updated", [0.1], {});
+
+    const sql = mockQuery.mock.calls[0]![0] as string;
+    expect(sql).toMatch(/RETURNING[\s\S]*updated_at/);
+    expect(result.updated_at).toEqual(updated_at);
+    expect(result.updated_at).not.toEqual(result.created_at);
+  });
+});
