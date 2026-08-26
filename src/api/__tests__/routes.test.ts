@@ -284,6 +284,51 @@ describe("REST API Routes", () => {
     expect(patch.topics).toEqual(["car-rental"]);
   });
 
+  it("PUT /memories/:id warns when the edit outgrows the embedder's context", async () => {
+    mockUpdateThought.mockResolvedValueOnce({
+      id: "a1b2c3d4-1234-5678-9abc-def012345678",
+      content: "x",
+      metadata: { type: "decision", topics: [], people: [] },
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const res = await app.request("/memories/a1b2c3d4-1234-5678-9abc-def012345678", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "a".repeat(6001) }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { warnings: { reason: string }[] };
+    expect(body.warnings).toHaveLength(1);
+    expect(body.warnings[0]!.reason).toBe("embedding_truncated");
+
+    const patch = mockUpdateThought.mock.calls.at(-1)![4] as Record<string, unknown>;
+    expect(patch.embedding_truncated).toBe(true);
+  });
+
+  it("PUT /memories/:id clears the truncation flag when the edit fits again", async () => {
+    mockUpdateThought.mockResolvedValueOnce({
+      id: "a1b2c3d4-1234-5678-9abc-def012345678",
+      content: "short",
+      metadata: { type: "decision", topics: [], people: [] },
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const res = await app.request("/memories/a1b2c3d4-1234-5678-9abc-def012345678", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "short" }),
+    });
+
+    expect(res.status).toBe(200);
+
+    const drop = mockUpdateThought.mock.calls.at(-1)![5] as string[];
+    expect(drop).toContain("embedding_truncated");
+  });
+
   it("PUT /memories/:id returns 404 when not found", async () => {
     mockUpdateThought.mockRejectedValueOnce(new Error("Thought not found: 00000000-0000-0000-0000-000000000000"));
 

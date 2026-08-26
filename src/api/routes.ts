@@ -487,6 +487,7 @@ export function createApi(): Hono {
       let update;
       try {
         update = resolveUpdateMetadata({
+          content: body.content,
           extracted,
           caller: { type: body.type, topics: body.topics, people: body.people },
           vocabulary: await getTopicVocabulary(pool),
@@ -499,8 +500,10 @@ export function createApi(): Hono {
         throw err;
       }
 
-      const result = await updateThought(pool, id, body.content, embedding, update.patch);
+      const result = await updateThought(pool, id, body.content, embedding, update.patch, update.drop);
       if (Array.isArray(result.metadata.topics)) rememberTopics(result.metadata.topics);
+
+      logWarnings(update.warnings, { transport: "rest", source: "update" });
 
       return c.json({
         status: "updated",
@@ -511,6 +514,7 @@ export function createApi(): Hono {
         content: result.content,
         updated_at: result.updated_at.toISOString(),
         discipline_notes: update.notes,
+        warnings: update.warnings,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

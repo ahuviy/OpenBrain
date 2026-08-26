@@ -518,6 +518,9 @@ Update an existing thought's content. Re-generates the embedding and re-derives 
 | `people` | string[] | Replace the people mentioned. Omit to keep the current ones |
 | `new_topics` | boolean | Allow this edit to mint unseen topic tags (default `false`) |
 
+An edit that pushes content past what the embedder indexes returns the same `embedding_truncated`
+warning a capture does, and shortening a thought back under the ceiling clears the flag.
+
 **An edit changes only what it is asked to change.** `type`, `topics` and `people` are curated at
 capture, so they are preserved unless you pass replacements — as are `source` and `provenance`.
 Anything you do pass goes through the same discipline a capture gets: normalisation, the alias map,

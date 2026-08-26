@@ -38,6 +38,48 @@ export function getEmbedSafeBytes(): number {
   return 6000;
 }
 
+/** The metadata keys that record how much of a thought the embedder indexed. */
+export const EMBEDDING_COVERAGE_KEYS = [
+  "embedding_truncated",
+  "embedding_indexed_bytes",
+  "content_bytes",
+] as const;
+
+export interface EmbeddingCoverage {
+  /** Keys to write. Empty when the content fits. */
+  flags: Record<string, unknown>;
+  /** Present only when the embedder will not see all of the content. */
+  warning?: CaptureWarning;
+}
+
+/**
+ * How much of `content` the embedder will actually index.
+ *
+ * Shared by both write paths: an edit can push a thought over the ceiling just
+ * as easily as a capture can, and a truncation nobody was told about is a tail
+ * that silently stops being searchable.
+ */
+export function checkEmbeddingCoverage(content: string): EmbeddingCoverage {
+  const contentBytes = Buffer.byteLength(content, "utf8");
+  const safeBytes = getEmbedSafeBytes();
+
+  if (contentBytes <= safeBytes) return { flags: {} };
+
+  return {
+    flags: {
+      embedding_truncated: true,
+      embedding_indexed_bytes: safeBytes,
+      content_bytes: contentBytes,
+    },
+    warning: {
+      field: "content",
+      reason: "embedding_truncated",
+      message: `Content is ${contentBytes} bytes; embedder will index only the first ~${safeBytes} bytes. Full content is stored, but semantic search may not match passages past byte ${safeBytes}.`,
+      suggestion: `Split this into smaller captures (e.g. one per H3 section) if you need search coverage of the tail.`,
+    },
+  };
+}
+
 export interface ValidatedCapture {
   content: string;
   source: string;
@@ -221,18 +263,10 @@ export function validateCaptureInput(
   // Embedding-context check. Informational only — not escalated in strict mode
   // because oversized content is a data property, not a shape bug. The full
   // content still gets stored; only the embedding is truncated by the model.
-  const contentBytes = Buffer.byteLength(content, "utf8");
-  const safeBytes = getEmbedSafeBytes();
-  if (contentBytes > safeBytes) {
-    metadata.embedding_truncated = true;
-    metadata.embedding_indexed_bytes = safeBytes;
-    metadata.content_bytes = contentBytes;
-    warnings.push({
-      field: "content",
-      reason: "embedding_truncated",
-      message: `Content is ${contentBytes} bytes; embedder will index only the first ~${safeBytes} bytes. Full content is stored, but semantic search may not match passages past byte ${safeBytes}.`,
-      suggestion: `Split this into smaller captures (e.g. one per H3 section) if you need search coverage of the tail.`,
-    });
+  const coverage = checkEmbeddingCoverage(content);
+  if (coverage.warning) {
+    Object.assign(metadata, coverage.flags);
+    warnings.push(coverage.warning);
   }
 
   return {

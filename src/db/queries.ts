@@ -363,7 +363,8 @@ export interface UpdatedThoughtRow extends ThoughtRow {
 }
 
 /**
- * Rewrites content and embedding, and MERGES `patch` into the stored metadata.
+ * Rewrites content and embedding, MERGES `patch` into the stored metadata, and
+ * deletes the keys named in `drop`.
  *
  * A key absent from `patch` keeps its stored value — that is the contract
  * `resolveUpdateMetadata` is written against, and it is what stops an edit from
@@ -376,7 +377,8 @@ export async function updateThought(
   id: string,
   content: string,
   embedding: number[],
-  patch: ThoughtMetadata
+  patch: ThoughtMetadata,
+  drop: readonly string[] = []
 ): Promise<UpdatedThoughtRow> {
   const embeddingStr = `[${embedding.join(",")}]`;
 
@@ -384,10 +386,10 @@ export async function updateThought(
     `UPDATE thoughts
      SET content = $2,
          embedding = $3::vector,
-         metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb
+         metadata = (COALESCE(metadata, '{}'::jsonb) - $5::text[]) || $4::jsonb
      WHERE id = $1
      RETURNING id, content, metadata, project, archived, supersedes, created_at, updated_at`,
-    [id, content, embeddingStr, JSON.stringify(patch)]
+    [id, content, embeddingStr, JSON.stringify(patch), drop]
   );
 
   if (!rowCount || rowCount === 0) {

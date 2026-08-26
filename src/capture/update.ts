@@ -16,9 +16,15 @@
  * content refresh on their own.
  *
  * Caller-supplied values go through the same discipline capture uses, so an edit
- * cannot mint a tag a capture would have refused.
+ * cannot mint a tag a capture would have refused, and an edit that outgrows the
+ * embedder's context is reported the same way a capture is.
  */
 
+import {
+  checkEmbeddingCoverage,
+  EMBEDDING_COVERAGE_KEYS,
+  type CaptureWarning,
+} from "../api/validation.js";
 import type { ThoughtMetadataExtracted } from "../embedder/types.js";
 import {
   getDisciplineConfig,
@@ -37,6 +43,8 @@ export interface UpdateFields {
 }
 
 export interface UpdateMetadataInput {
+  /** The new content, for the embedding-coverage check. */
+  content: string;
   /** Metadata the extractor produced from the NEW content. */
   extracted: ThoughtMetadataExtracted;
   /** What the caller explicitly asked to change. */
@@ -51,7 +59,10 @@ export interface UpdateMetadataInput {
 export interface UpdateMetadataResult {
   /** Keys to merge over the stored metadata. Absent key = preserved value. */
   patch: Record<string, unknown>;
+  /** Keys to delete outright — a flag that is no longer true must not linger. */
+  drop: string[];
   notes: DisciplineNote[];
+  warnings: CaptureWarning[];
 }
 
 export function resolveUpdateMetadata(input: UpdateMetadataInput): UpdateMetadataResult {
@@ -63,6 +74,13 @@ export function resolveUpdateMetadata(input: UpdateMetadataInput): UpdateMetadat
     action_items: input.extracted.action_items,
     dates: input.extracted.dates,
   };
+
+  // Shortening a thought back under the ceiling has to clear the flags, or the
+  // metadata goes on claiming a truncation that no longer exists.
+  const coverage = checkEmbeddingCoverage(input.content);
+  Object.assign(patch, coverage.flags);
+  const drop = coverage.warning ? [] : [...EMBEDDING_COVERAGE_KEYS];
+  const warnings = coverage.warning ? [coverage.warning] : [];
 
   if (input.caller.type !== undefined) {
     patch.type = resolveType(undefined, input.caller.type, false);
@@ -85,5 +103,5 @@ export function resolveUpdateMetadata(input: UpdateMetadataInput): UpdateMetadat
     patch.people = resolution.people;
   }
 
-  return { patch, notes };
+  return { patch, drop, notes, warnings };
 }

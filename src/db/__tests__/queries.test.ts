@@ -695,6 +695,31 @@ describe("updateThought metadata merge", () => {
     expect(sql).not.toMatch(/metadata = \$4::jsonb/);
   });
 
+  it("deletes the keys named in drop, so a stale flag cannot linger", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: "abc-123",
+        content: "updated",
+        metadata: {},
+        project: null,
+        archived: false,
+        supersedes: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }],
+      rowCount: 1,
+    });
+
+    await updateThought(pool, "abc-123", "updated", [0.1], {}, ["embedding_truncated"]);
+
+    const sql = mockQuery.mock.calls[0]![0] as string;
+    expect(sql).toContain("::text[]");
+
+    const params = mockQuery.mock.calls[0]![1] as unknown[];
+    expect(params[4]).toEqual(["embedding_truncated"]);
+  });
+
   it("tolerates a row whose metadata is null", async () => {
     const { pool, mockQuery } = createMockPool();
     mockQuery.mockResolvedValueOnce({

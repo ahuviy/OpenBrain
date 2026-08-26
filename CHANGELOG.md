@@ -62,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two-day cadence.
 
 ### Fixed
+- `update_thought` (REST: `PUT /memories/:id`) reports an `embedding_truncated`
+  warning when an edit outgrows the embedder's context, and clears the flag when
+  a later edit fits again. Capture has warned about this since the check was
+  added; update never ran it, so an edit could silently push a thought's tail out
+  of the index with nothing said, or leave it claiming a truncation that no
+  longer applied.
 - `update_thought` (REST: `PUT /memories/:id`) no longer overwrites curated
   metadata. It re-ran extraction over the new content and replaced the whole
   metadata object with the result, so every content edit silently retyped the

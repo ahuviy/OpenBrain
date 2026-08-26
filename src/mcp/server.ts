@@ -836,6 +836,7 @@ export function createMcpServer(): Server {
           let update;
           try {
             update = resolveUpdateMetadata({
+              content,
               extracted,
               caller: {
                 type: args?.type as string | undefined,
@@ -855,10 +856,15 @@ export function createMcpServer(): Server {
             throw err;
           }
 
-          const result = await updateThought(pool, id, content, embedding, update.patch);
+          const result = await updateThought(pool, id, content, embedding, update.patch, update.drop);
           if (Array.isArray(result.metadata.topics)) rememberTopics(result.metadata.topics);
 
+          logWarnings(update.warnings, { transport: "mcp", source: "update_thought" });
+
           const updateContent: { type: "text"; text: string }[] = [];
+          if (update.warnings.length > 0) {
+            updateContent.push({ type: "text" as const, text: formatWarnings(update.warnings) });
+          }
           if (update.notes.length > 0) {
             updateContent.push({ type: "text" as const, text: formatDisciplineNotes(update.notes) });
           }
@@ -872,6 +878,7 @@ export function createMcpServer(): Server {
                 topics: result.metadata.topics,
                 people: result.metadata.people,
                 updated_at: result.updated_at.toISOString(),
+                warnings: update.warnings,
               },
               null,
               2
