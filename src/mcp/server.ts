@@ -46,6 +46,7 @@ import {
 } from "../capture/discipline.js";
 import { findDuplicate, formatDuplicateRejection } from "../capture/dedupe.js";
 import { getTopicVocabulary, rememberTopics } from "../capture/vocabulary.js";
+import { resolveUpdateMetadata } from "../capture/update.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -388,8 +389,9 @@ export function createMcpServer(): Server {
       {
         name: "update_thought",
         description:
-          "Update an existing thought's content. Re-generates embedding and re-extracts metadata automatically.\n\n" +
-          "This is the correct response to a duplicate: when a capture is refused because a near-identical thought exists, merge the new information into that thought's content and update it here.",
+          "Update an existing thought's content. Re-generates the embedding and re-derives action items and dates from the new text.\n\n" +
+          "This is the correct response to a duplicate: when a capture is refused because a near-identical thought exists, merge the new information into that thought's content and update it here.\n\n" +
+          "An edit changes only what you ask it to change. The thought's existing type, topics and people are PRESERVED unless you pass replacements — so editing content never silently retypes a thought or swaps its curated tags. Pass 'topics' only when the tags genuinely need to change, and reuse the vocabulary the brain already has.",
         inputSchema: {
           type: "object" as const,
           properties: {
@@ -400,6 +402,30 @@ export function createMcpServer(): Server {
             content: {
               type: "string",
               description: "New content for the thought",
+            },
+            type: {
+              type: "string",
+              enum: [...THOUGHT_TYPES],
+              description:
+                "Re-type the thought. Omit to keep the type it already has.",
+            },
+            topics: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Replace the thought's topic tags. Omit to keep the tags it already has — which is almost always what you want.",
+            },
+            people: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Replace the people mentioned, by canonical full name. Omit to keep the ones it already has.",
+            },
+            new_topics: {
+              type: "boolean",
+              description:
+                "Allow this edit to mint topic tags the brain has never used. Only when no existing tag fits.",
+              default: false,
             },
           },
           required: ["id", "content"],
@@ -802,32 +828,57 @@ export function createMcpServer(): Server {
             };
           }
 
-          // Re-generate embedding and re-extract metadata
-          const [embedding, metadata] = await Promise.all([
+          const [embedding, extracted] = await Promise.all([
             embedder.generateEmbedding(content),
             embedder.extractMetadata(content),
           ]);
 
-          const result = await updateThought(pool, id, content, embedding, metadata);
-
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    status: "updated",
-                    id: result.id,
-                    type: metadata.type,
-                    topics: metadata.topics,
-                    updated_at: result.updated_at.toISOString(),
-                  },
-                  null,
-                  2
-                ),
+          let update;
+          try {
+            update = resolveUpdateMetadata({
+              extracted,
+              caller: {
+                type: args?.type as string | undefined,
+                topics: args?.topics as string[] | undefined,
+                people: args?.people as string[] | undefined,
               },
-            ],
-          };
+              vocabulary: await getTopicVocabulary(pool),
+              allowNewTopics: args?.new_topics === true,
+            });
+          } catch (err) {
+            if (err instanceof CaptureDisciplineError) {
+              return {
+                content: [{ type: "text" as const, text: `Error: ${err.message}` }],
+                isError: true,
+              };
+            }
+            throw err;
+          }
+
+          const result = await updateThought(pool, id, content, embedding, update.patch);
+          if (Array.isArray(result.metadata.topics)) rememberTopics(result.metadata.topics);
+
+          const updateContent: { type: "text"; text: string }[] = [];
+          if (update.notes.length > 0) {
+            updateContent.push({ type: "text" as const, text: formatDisciplineNotes(update.notes) });
+          }
+          updateContent.push({
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                status: "updated",
+                id: result.id,
+                type: result.metadata.type,
+                topics: result.metadata.topics,
+                people: result.metadata.people,
+                updated_at: result.updated_at.toISOString(),
+              },
+              null,
+              2
+            ),
+          });
+
+          return { content: updateContent };
         }
 
         // ── delete_thought ──

@@ -235,6 +235,55 @@ describe("REST API Routes", () => {
     expect(body.updated_at).not.toBe(created_at.toISOString());
   });
 
+  it("PUT /memories/:id preserves curated metadata the caller did not send", async () => {
+    mockUpdateThought.mockResolvedValueOnce({
+      id: "a1b2c3d4-1234-5678-9abc-def012345678",
+      content: "updated content",
+      metadata: { type: "decision", topics: ["car-rental"], people: [] },
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const res = await app.request("/memories/a1b2c3d4-1234-5678-9abc-def012345678", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "updated content" }),
+    });
+
+    expect(res.status).toBe(200);
+
+    const patch = mockUpdateThought.mock.calls.at(-1)![4] as Record<string, unknown>;
+    expect(patch).not.toHaveProperty("topics");
+    expect(patch).not.toHaveProperty("type");
+    expect(patch).not.toHaveProperty("people");
+
+    // The response reports what the row now holds, not what extraction guessed.
+    const body = (await res.json()) as { topics: string[]; type: string };
+    expect(body.topics).toEqual(["car-rental"]);
+    expect(body.type).toBe("decision");
+  });
+
+  it("PUT /memories/:id sends caller topics through capture's normalisation", async () => {
+    mockUpdateThought.mockResolvedValueOnce({
+      id: "a1b2c3d4-1234-5678-9abc-def012345678",
+      content: "updated content",
+      metadata: { type: "decision", topics: ["car-rental"], people: [] },
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    const res = await app.request("/memories/a1b2c3d4-1234-5678-9abc-def012345678", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: "updated content", topics: ["Car Rental"] }),
+    });
+
+    expect(res.status).toBe(200);
+
+    const patch = mockUpdateThought.mock.calls.at(-1)![4] as Record<string, unknown>;
+    expect(patch.topics).toEqual(["car-rental"]);
+  });
+
   it("PUT /memories/:id returns 404 when not found", async () => {
     mockUpdateThought.mockRejectedValueOnce(new Error("Thought not found: 00000000-0000-0000-0000-000000000000"));
 

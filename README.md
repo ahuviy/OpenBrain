@@ -506,12 +506,22 @@ nobody made. Either way nothing is archived and the judgments are gone.
 
 ### `update_thought`
 
-Update an existing thought's content. Re-generates embedding and re-extracts metadata automatically.
+Update an existing thought's content. Re-generates the embedding and re-derives `action_items` and
+`dates` from the new text.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `id` | string | *required* — UUID of the thought to update |
 | `content` | string | *required* — New content |
+| `type` | string | Re-type the thought. Omit to keep its current type |
+| `topics` | string[] | Replace the topic tags. Omit to keep the current ones |
+| `people` | string[] | Replace the people mentioned. Omit to keep the current ones |
+| `new_topics` | boolean | Allow this edit to mint unseen topic tags (default `false`) |
+
+**An edit changes only what it is asked to change.** `type`, `topics` and `people` are curated at
+capture, so they are preserved unless you pass replacements — as are `source` and `provenance`.
+Anything you do pass goes through the same discipline a capture gets: normalisation, the alias map,
+and the new-tag gate.
 
 ### `delete_thought`
 
@@ -1362,7 +1372,7 @@ These features do not exist in Nate's original and were built for active softwar
 | `list_thoughts` | ✅ type, topic, person, days | ✅ + project, include_archived |
 | `capture_thought` | ✅ content | ✅ + project, source, supersedes |
 | `thought_stats` | ✅ (no params) | ✅ + project |
-| `update_thought` | ❌ | ✅ id, content (re-embeds + re-extracts) |
+| `update_thought` | ❌ | ✅ id, content, type, topics, people (re-embeds; preserves curated metadata) |
 | `delete_thought` | ❌ | ✅ id |
 | `capture_thoughts` | ❌ | ✅ batch capture with shared project/source |
 

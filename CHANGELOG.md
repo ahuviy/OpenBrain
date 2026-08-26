@@ -62,6 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two-day cadence.
 
 ### Fixed
+- `update_thought` (REST: `PUT /memories/:id`) no longer overwrites curated
+  metadata. It re-ran extraction over the new content and replaced the whole
+  metadata object with the result, so every content edit silently retyped the
+  thought and swapped its tags for freshly inferred near-duplicates — the write
+  path minting exactly the vocabulary drift the dream sweep exists to collapse —
+  and took `source` and `provenance` with them. `type`, `topics` and `people` are
+  now preserved unless the caller passes replacements, which the tool and the
+  route both accept; everything else merges rather than replaces. Caller-supplied
+  values go through the same normalisation, alias map and new-tag gate as a
+  capture, so an edit can no longer mint a tag a capture would have refused.
 - `update_thought` (REST: `PUT /memories/:id`) reports the time of the edit in
   `updated_at`. It returned the thought's `created_at` instead, so an edit was
   indistinguishable from a capture and edit recency could not be sorted on. The

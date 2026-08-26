@@ -362,21 +362,32 @@ export interface UpdatedThoughtRow extends ThoughtRow {
   updated_at: Date;
 }
 
+/**
+ * Rewrites content and embedding, and MERGES `patch` into the stored metadata.
+ *
+ * A key absent from `patch` keeps its stored value — that is the contract
+ * `resolveUpdateMetadata` is written against, and it is what stops an edit from
+ * dropping the curated topics, the type, `source` and `provenance` that the
+ * caller never mentioned. Replacing the object wholesale is how a merge here
+ * silently discarded provenance once already.
+ */
 export async function updateThought(
   pool: pg.Pool,
   id: string,
   content: string,
   embedding: number[],
-  metadata: ThoughtMetadata
+  patch: ThoughtMetadata
 ): Promise<UpdatedThoughtRow> {
   const embeddingStr = `[${embedding.join(",")}]`;
 
   const { rows, rowCount } = await pool.query<UpdatedThoughtRow>(
     `UPDATE thoughts
-     SET content = $2, embedding = $3::vector, metadata = $4::jsonb
+     SET content = $2,
+         embedding = $3::vector,
+         metadata = COALESCE(metadata, '{}'::jsonb) || $4::jsonb
      WHERE id = $1
      RETURNING id, content, metadata, project, archived, supersedes, created_at, updated_at`,
-    [id, content, embeddingStr, JSON.stringify(metadata)]
+    [id, content, embeddingStr, JSON.stringify(patch)]
   );
 
   if (!rowCount || rowCount === 0) {

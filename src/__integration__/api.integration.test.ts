@@ -333,6 +333,67 @@ describe("Update", () => {
     expect(body.content).toContain("50k vectors");
   });
 
+  it("preserves curated topics through a content-only edit", async () => {
+    const { body: created } = await api("/memories", {
+      method: "POST",
+      body: JSON.stringify({
+        content: "Cars4Rent booking wh9744 is paid in cash at pickup, not by card.",
+        type: "task",
+        topics: ["car-rental", "georgia"],
+        project: TEST_PROJECT,
+        new_topics: true,
+      }),
+    });
+    createdIds.push(created.id);
+    expect(created.topics).toEqual(["car-rental", "georgia"]);
+
+    const { status, body } = await api(`/memories/${created.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        content: "Cars4Rent booking wh9744 is paid in cash at pickup; a card adds 3.5%.",
+      }),
+    });
+
+    expect(status).toBe(200);
+    expect(body.topics).toEqual(["car-rental", "georgia"]);
+    expect(body.type).toBe("task");
+
+    // And it is the stored row that changed, not just the response.
+    const { body: listed } = await api("/memories/list", {
+      method: "POST",
+      body: JSON.stringify({ project: TEST_PROJECT }),
+    });
+    const stored = listed.results.find((r: any) => r.id === created.id);
+    expect(stored.metadata.topics).toEqual(["car-rental", "georgia"]);
+    expect(stored.metadata.type).toBe("task");
+  });
+
+  it("replaces topics when the edit asks for it", async () => {
+    const { body: created } = await api("/memories", {
+      method: "POST",
+      body: JSON.stringify({
+        content: "Tire condition on the rental: front tires perished, dry-rot cracking.",
+        type: "bug",
+        topics: ["car-rental"],
+        project: TEST_PROJECT,
+        new_topics: true,
+      }),
+    });
+    createdIds.push(created.id);
+
+    const { status, body } = await api(`/memories/${created.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        content: "Tire condition on the rental: front tires perished, replaced at the depot.",
+        topics: ["Tire Safety"],
+        new_topics: true,
+      }),
+    });
+
+    expect(status).toBe(200);
+    expect(body.topics).toEqual(["tire-safety"]);
+  });
+
   it("stamps updated_at at the edit, not at the capture", async () => {
     const { body: created } = await api("/memories", {
       method: "POST",

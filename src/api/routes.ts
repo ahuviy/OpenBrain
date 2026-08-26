@@ -46,6 +46,7 @@ import {
 } from "../capture/discipline.js";
 import { findDuplicate } from "../capture/dedupe.js";
 import { getTopicVocabulary, rememberTopics } from "../capture/vocabulary.js";
+import { resolveUpdateMetadata } from "../capture/update.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -465,27 +466,51 @@ export function createApi(): Hono {
       return c.json({ error: "id must be a valid UUID" }, 400);
     }
 
-    const body = await c.req.json<{ content: string }>();
+    const body = await c.req.json<{
+      content: string;
+      type?: string;
+      topics?: string[];
+      people?: string[];
+      new_topics?: boolean;
+    }>();
 
     if (!body.content || body.content.trim().length === 0) {
       return c.json({ error: "content is required" }, 400);
     }
 
     try {
-      const [embedding, metadata] = await Promise.all([
+      const [embedding, extracted] = await Promise.all([
         embedder.generateEmbedding(body.content),
         embedder.extractMetadata(body.content),
       ]);
 
-      const result = await updateThought(pool, id, body.content, embedding, metadata);
+      let update;
+      try {
+        update = resolveUpdateMetadata({
+          extracted,
+          caller: { type: body.type, topics: body.topics, people: body.people },
+          vocabulary: await getTopicVocabulary(pool),
+          allowNewTopics: body.new_topics === true,
+        });
+      } catch (err) {
+        if (err instanceof CaptureDisciplineError) {
+          return c.json({ error: err.message, field: err.field }, 422);
+        }
+        throw err;
+      }
+
+      const result = await updateThought(pool, id, body.content, embedding, update.patch);
+      if (Array.isArray(result.metadata.topics)) rememberTopics(result.metadata.topics);
 
       return c.json({
         status: "updated",
         id: result.id,
-        type: metadata.type,
-        topics: metadata.topics,
+        type: result.metadata.type,
+        topics: result.metadata.topics,
+        people: result.metadata.people,
         content: result.content,
         updated_at: result.updated_at.toISOString(),
+        discipline_notes: update.notes,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

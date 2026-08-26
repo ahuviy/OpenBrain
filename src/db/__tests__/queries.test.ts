@@ -668,6 +668,56 @@ describe("findOpenProposal", () => {
   });
 });
 
+// ─── updateThought: metadata merge ──────────────────────────────────
+
+describe("updateThought metadata merge", () => {
+  it("merges the patch into stored metadata instead of replacing it", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: "abc-123",
+        content: "updated",
+        metadata: {},
+        project: null,
+        archived: false,
+        supersedes: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }],
+      rowCount: 1,
+    });
+
+    await updateThought(pool, "abc-123", "updated", [0.1], { action_items: [] });
+
+    const sql = mockQuery.mock.calls[0]![0] as string;
+    expect(sql).toContain("metadata = ");
+    expect(sql).toMatch(/metadata[\s\S]*\|\|/);
+    expect(sql).not.toMatch(/metadata = \$4::jsonb/);
+  });
+
+  it("tolerates a row whose metadata is null", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValueOnce({
+      rows: [{
+        id: "abc-123",
+        content: "updated",
+        metadata: {},
+        project: null,
+        archived: false,
+        supersedes: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }],
+      rowCount: 1,
+    });
+
+    await updateThought(pool, "abc-123", "updated", [0.1], {});
+
+    const sql = mockQuery.mock.calls[0]![0] as string;
+    expect(sql).toContain("COALESCE(metadata");
+  });
+});
+
 // ─── updateThought: the edit stamp ──────────────────────────────────
 
 describe("updateThought edit stamp", () => {

@@ -200,6 +200,21 @@ describe("MCP Server Tool Listing", () => {
     expect(updateTool.inputSchema.required).toEqual(["id", "content"]);
   });
 
+  it("update_thought can replace curated fields, but never requires them", async () => {
+    const server = createMcpServer();
+    const handler = (server as any)._requestHandlers?.get("tools/list");
+    const result = await handler({ method: "tools/list" });
+
+    const updateTool = result.tools.find((t: any) => t.name === "update_thought");
+    const props = updateTool.inputSchema.properties;
+
+    expect(Object.keys(props)).toEqual(
+      expect.arrayContaining(["type", "topics", "people", "new_topics"])
+    );
+    expect(updateTool.inputSchema.required).toEqual(["id", "content"]);
+    expect(updateTool.description).toContain("PRESERVED");
+  });
+
   it("delete_thought requires id", async () => {
     const server = createMcpServer();
     const handler = (server as any)._requestHandlers?.get("tools/list");

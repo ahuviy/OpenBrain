@@ -272,6 +272,29 @@ export function resolveTopics(
   return { topics, unknown, notes };
 }
 
+/**
+ * `resolveTopics` plus the new-tag gate. Both write paths refuse an unseen tag
+ * on the same terms — a rule that bound only on capture would let every edit
+ * mint the near-duplicates the vocabulary sweep exists to collapse.
+ */
+export function resolveTopicsGated(
+  raw: string[],
+  vocabulary: readonly string[],
+  config: DisciplineConfig,
+  allowNewTopics: boolean | undefined,
+): TopicResolution {
+  const resolution = resolveTopics(raw, vocabulary, config.topicAliases);
+
+  if (config.requireKnownTopics && resolution.unknown.length > 0 && !allowNewTopics) {
+    throw new CaptureDisciplineError(
+      "topics",
+      `New topic tag(s) ${resolution.unknown.map((t) => `'${t}'`).join(", ")} are not in the brain's vocabulary. Re-send with an existing tag, or with new_topics: true to mint them deliberately.`,
+    );
+  }
+
+  return resolution;
+}
+
 /** Match `markets` onto an existing `market`, or vice versa. Nothing looser. */
 function stemMatch(topic: string, known: Set<string>): string | undefined {
   if (topic.endsWith("s")) {
@@ -405,15 +428,8 @@ export function applyCaptureDiscipline(input: DisciplineInput): DisciplineResult
   const type = resolveType(input.extracted.type, input.explicitType ?? callerType, config.requireSpecificType);
 
   const rawTopics = pickStringArray(input.callerMetadata.topics) ?? input.extracted.topics ?? [];
-  const topicResolution = resolveTopics(rawTopics, input.vocabulary, config.topicAliases);
+  const topicResolution = resolveTopicsGated(rawTopics, input.vocabulary, config, input.allowNewTopics);
   notes.push(...topicResolution.notes);
-
-  if (config.requireKnownTopics && topicResolution.unknown.length > 0 && !input.allowNewTopics) {
-    throw new CaptureDisciplineError(
-      "topics",
-      `New topic tag(s) ${topicResolution.unknown.map((t) => `'${t}'`).join(", ")} are not in the brain's vocabulary. Re-send with an existing tag, or with new_topics: true to mint them deliberately.`,
-    );
-  }
 
   const rawPeople = pickStringArray(input.callerMetadata.people) ?? input.extracted.people ?? [];
   const peopleResolution = resolvePeople(rawPeople, config.personAliases, config.selfNames);
