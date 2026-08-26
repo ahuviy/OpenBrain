@@ -8,6 +8,9 @@ SECRETS.local.md
 
 # Node / TypeScript
 node_modules/
+# The tracked `node_modules` symlink points here, so this is where a real
+# install actually lands — ignore it too, or every install shows up untracked.
+node_modules.noindex/
 dist/
 *.tsbuildinfo
 
