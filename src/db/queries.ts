@@ -67,6 +67,26 @@ export interface ListFilters {
 
 // ─── Insert ──────────────────────────────────────────────────────────
 
+const INSERT_THOUGHT_SQL = `INSERT INTO thoughts (content, embedding, metadata, project, supersedes, created_by)
+     VALUES ($1, $2::vector, $3::jsonb, $4, $5, $6)
+     RETURNING id, content, metadata, project, created_by, archived, supersedes, created_at`;
+
+export interface InsertedThoughtRow extends ThoughtRow {
+  /** Whether the superseded thought was retired. Absent when none was named. */
+  superseded_archived?: boolean;
+}
+
+/**
+ * Writes one thought, and retires the thought it supersedes in the same
+ * transaction.
+ *
+ * `supersedes` used to be stored as a bare pointer and nothing else happened:
+ * the caller was told the write succeeded while both copies stayed live and
+ * searchable, which is worse than the parameter being ignored, because the name
+ * promises otherwise. It is the same hazard `insertMergedThought` archives for —
+ * a replacement whose predecessor is still live doubles every search result —
+ * and it belongs here so it binds on REST and MCP alike.
+ */
 export async function insertThought(
   pool: pg.Pool,
   content: string,
@@ -75,17 +95,42 @@ export async function insertThought(
   project?: string,
   supersedes?: string,
   created_by?: string
-): Promise<ThoughtRow> {
+): Promise<InsertedThoughtRow> {
   const embeddingStr = `[${embedding.join(",")}]`;
+  const params = [
+    content,
+    embeddingStr,
+    JSON.stringify(metadata),
+    project ?? null,
+    supersedes ?? null,
+    created_by ?? null,
+  ];
 
-  const { rows } = await pool.query<ThoughtRow>(
-    `INSERT INTO thoughts (content, embedding, metadata, project, supersedes, created_by)
-     VALUES ($1, $2::vector, $3::jsonb, $4, $5, $6)
-     RETURNING id, content, metadata, project, created_by, archived, supersedes, created_at`,
-    [content, embeddingStr, JSON.stringify(metadata), project ?? null, supersedes ?? null, created_by ?? null]
-  );
+  if (!supersedes) {
+    const { rows } = await pool.query<ThoughtRow>(INSERT_THOUGHT_SQL, params);
+    return rows[0]!;
+  }
 
-  return rows[0]!;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { rows } = await client.query<ThoughtRow>(INSERT_THOUGHT_SQL, params);
+
+    const archived = await client.query(
+      `UPDATE thoughts SET archived = true WHERE id = $1`,
+      [supersedes]
+    );
+
+    await client.query("COMMIT");
+
+    return { ...rows[0]!, superseded_archived: (archived.rowCount ?? 0) > 0 };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ─── Semantic Search ─────────────────────────────────────────────────
@@ -484,14 +529,21 @@ export interface BatchThoughtInput {
   metadata: ThoughtMetadata;
   project?: string;
   created_by?: string;
+  supersedes?: string;
 }
 
+/**
+ * A batch item's `supersedes` is honoured exactly as a single capture's is. It
+ * used to be read only by the duplicate check and then dropped before the
+ * INSERT, so declaring a replacement in a batch did nothing but switch off the
+ * one guard that would have caught the copy it created.
+ */
 export async function batchInsertThoughts(
   pool: pg.Pool,
   thoughts: BatchThoughtInput[]
-): Promise<ThoughtRow[]> {
+): Promise<InsertedThoughtRow[]> {
   const client = await pool.connect();
-  const results: ThoughtRow[] = [];
+  const results: InsertedThoughtRow[] = [];
 
   try {
     await client.query("BEGIN");
@@ -499,20 +551,25 @@ export async function batchInsertThoughts(
     for (const thought of thoughts) {
       const embeddingStr = `[${thought.embedding.join(",")}]`;
 
-      const { rows } = await client.query<ThoughtRow>(
-        `INSERT INTO thoughts (content, embedding, metadata, project, created_by)
-         VALUES ($1, $2::vector, $3::jsonb, $4, $5)
-         RETURNING id, content, metadata, project, created_by, archived, supersedes, created_at`,
-        [
-          thought.content,
-          embeddingStr,
-          JSON.stringify(thought.metadata),
-          thought.project ?? null,
-          thought.created_by ?? null,
-        ]
-      );
+      const { rows } = await client.query<ThoughtRow>(INSERT_THOUGHT_SQL, [
+        thought.content,
+        embeddingStr,
+        JSON.stringify(thought.metadata),
+        thought.project ?? null,
+        thought.supersedes ?? null,
+        thought.created_by ?? null,
+      ]);
 
-      results.push(rows[0]!);
+      if (!thought.supersedes) {
+        results.push(rows[0]!);
+        continue;
+      }
+
+      const archived = await client.query(
+        `UPDATE thoughts SET archived = true WHERE id = $1`,
+        [thought.supersedes]
+      );
+      results.push({ ...rows[0]!, superseded_archived: (archived.rowCount ?? 0) > 0 });
     }
 
     await client.query("COMMIT");

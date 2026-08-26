@@ -100,6 +100,47 @@ describe("Capture", () => {
     expect(body.error).toBeDefined();
   });
 
+  it("retires the thought a capture supersedes", async () => {
+    const { body: original } = await api("/memories", {
+      method: "POST",
+      body: JSON.stringify({
+        content: "Supersession probe: the deposit is four hundred euro.",
+        type: "reference",
+        project: TEST_PROJECT,
+      }),
+    });
+    createdIds.push(original.id);
+
+    const { status, body: replacement } = await api("/memories", {
+      method: "POST",
+      body: JSON.stringify({
+        content: "Supersession probe: the deposit is six hundred euro.",
+        type: "reference",
+        project: TEST_PROJECT,
+        supersedes: original.id,
+      }),
+    });
+    createdIds.push(replacement.id);
+
+    expect(status).toBe(200);
+    expect(replacement.superseded_archived).toBe(true);
+
+    const { body: live } = await api("/memories/list", {
+      method: "POST",
+      body: JSON.stringify({ project: TEST_PROJECT }),
+    });
+    const liveIds = live.results.map((r: any) => r.id);
+    expect(liveIds).toContain(replacement.id);
+    expect(liveIds).not.toContain(original.id);
+
+    // Archived, not deleted — the predecessor is still there to go back to.
+    const { body: all } = await api("/memories/list", {
+      method: "POST",
+      body: JSON.stringify({ project: TEST_PROJECT, include_archived: true }),
+    });
+    expect(all.results.map((r: any) => r.id)).toContain(original.id);
+  });
+
   it("rejects invalid supersedes UUID", async () => {
     const { status } = await api("/memories", {
       method: "POST",

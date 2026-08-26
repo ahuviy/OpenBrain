@@ -189,6 +189,8 @@ export function createApi(): Hono {
         people: disciplined.people,
         project: result.project,
         captured_at: result.created_at.toISOString(),
+        supersedes: result.supersedes ?? undefined,
+        superseded_archived: result.superseded_archived,
         warnings: input.warnings,
         discipline_notes: disciplined.notes,
       });
@@ -265,6 +267,7 @@ export function createApi(): Hono {
               },
               project: disciplined.project,
               created_by: item.created_by,
+              supersedes: item.supersedes,
             };
             return { index, thought, notes: disciplined.notes };
           } catch (err) {

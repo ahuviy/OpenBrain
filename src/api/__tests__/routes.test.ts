@@ -208,6 +208,33 @@ describe("REST API Routes", () => {
     expect(body.results[0]!.matched_by).toBe("text");
   });
 
+  it("POST /memories reports that a supersession retired the old thought", async () => {
+    mockInsertThought.mockResolvedValueOnce({
+      id: "b5011491-1234-5678-9abc-def012345678",
+      content: "the replacement",
+      metadata: { type: "task", topics: [], people: [] },
+      project: null,
+      created_at: new Date(),
+      supersedes: "bcd40cf7-1234-5678-9abc-def012345678",
+      superseded_archived: true,
+    });
+
+    const res = await app.request("/memories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: "the replacement",
+        type: "task",
+        supersedes: "bcd40cf7-1234-5678-9abc-def012345678",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { supersedes: string; superseded_archived: boolean };
+    expect(body.supersedes).toBe("bcd40cf7-1234-5678-9abc-def012345678");
+    expect(body.superseded_archived).toBe(true);
+  });
+
   // ─── PUT /memories/:id ─────────────────────────────────────────────
 
   it("PUT /memories/:id returns updated thought", async () => {

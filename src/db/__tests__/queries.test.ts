@@ -668,6 +668,130 @@ describe("findOpenProposal", () => {
   });
 });
 
+// ─── insertThought: supersession ────────────────────────────────────
+
+describe("insertThought supersession", () => {
+  function superseded() {
+    return {
+      id: "new-id",
+      content: "the replacement",
+      metadata: {},
+      project: null,
+      created_by: null,
+      archived: false,
+      supersedes: "old-id",
+      created_at: new Date(),
+    };
+  }
+
+  it("archives the thought it supersedes, in the same transaction", async () => {
+    const { pool, mockQuery, mockConnect, mockRelease } = createMockPool();
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })                          // BEGIN
+      .mockResolvedValueOnce({ rows: [superseded()] })              // INSERT
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })             // archive
+      .mockResolvedValueOnce({ rows: [] });                         // COMMIT
+
+    const result = await insertThought(
+      pool, "the replacement", [0.1], {}, undefined, "old-id", undefined
+    );
+
+    expect(mockConnect).toHaveBeenCalled();
+
+    const statements = mockQuery.mock.calls.map((c) => c[0] as string);
+    expect(statements[0]).toBe("BEGIN");
+    expect(statements.at(-1)).toBe("COMMIT");
+
+    const archive = mockQuery.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("archived = true")
+    );
+    expect(archive).toBeDefined();
+    expect(archive![1]).toEqual(["old-id"]);
+
+    expect(result.superseded_archived).toBe(true);
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it("rolls back when archiving fails, so no orphan copy is left behind", async () => {
+    const { pool, mockQuery, mockRelease } = createMockPool();
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })                          // BEGIN
+      .mockResolvedValueOnce({ rows: [superseded()] })              // INSERT
+      .mockRejectedValueOnce(new Error("archive blew up"))          // archive
+      .mockResolvedValueOnce({ rows: [] });                         // ROLLBACK
+
+    await expect(
+      insertThought(pool, "the replacement", [0.1], {}, undefined, "old-id", undefined)
+    ).rejects.toThrow("archive blew up");
+
+    const statements = mockQuery.mock.calls.map((c) => c[0] as string);
+    expect(statements).toContain("ROLLBACK");
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it("reports when the superseded id matched no row", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [superseded()] })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await insertThought(
+      pool, "the replacement", [0.1], {}, undefined, "old-id", undefined
+    );
+
+    expect(result.superseded_archived).toBe(false);
+  });
+
+  it("stays a single statement when nothing is superseded", async () => {
+    const { pool, mockQuery, mockConnect } = createMockPool();
+    mockQuery.mockResolvedValueOnce({ rows: [{ ...superseded(), supersedes: null }] });
+
+    const result = await insertThought(pool, "plain capture", [0.1], {});
+
+    expect(mockConnect).not.toHaveBeenCalled();
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(result.superseded_archived).toBeUndefined();
+  });
+});
+
+describe("batchInsertThoughts supersession", () => {
+  it("writes supersedes and archives the predecessor for the items that name one", async () => {
+    const { pool, mockQuery } = createMockPool();
+    const row = {
+      id: "new-id",
+      content: "c",
+      metadata: {},
+      project: null,
+      created_by: null,
+      archived: false,
+      supersedes: null,
+      created_at: new Date(),
+    };
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })                            // BEGIN
+      .mockResolvedValueOnce({ rows: [row] })                         // INSERT plain
+      .mockResolvedValueOnce({ rows: [{ ...row, supersedes: "old" }] }) // INSERT superseding
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 })               // archive
+      .mockResolvedValueOnce({ rows: [] });                           // COMMIT
+
+    const results = await batchInsertThoughts(pool, [
+      { content: "plain", embedding: [0.1], metadata: {} },
+      { content: "replacement", embedding: [0.2], metadata: {}, supersedes: "old" },
+    ]);
+
+    const archive = mockQuery.mock.calls.find(
+      (c) => typeof c[0] === "string" && (c[0] as string).includes("archived = true")
+    );
+    expect(archive).toBeDefined();
+    expect(archive![1]).toEqual(["old"]);
+
+    expect(results[1]!.superseded_archived).toBe(true);
+    expect(results[0]!.superseded_archived).toBeUndefined();
+  });
+});
+
 // ─── updateThought: metadata merge ──────────────────────────────────
 
 describe("updateThought metadata merge", () => {

@@ -262,7 +262,8 @@ export function createMcpServer(): Server {
             },
             supersedes: {
               type: "string",
-              description: "UUID of a prior thought this one replaces",
+              description:
+                "UUID of a prior thought this one replaces. The named thought is archived as part of the same write, so it stops appearing in search and list results.",
             },
             created_by: {
               type: "string",
@@ -711,6 +712,8 @@ export function createMcpServer(): Server {
                 project: result.project,
                 action_items: autoMetadata.action_items,
                 captured_at: result.created_at.toISOString(),
+                supersedes: result.supersedes ?? undefined,
+                superseded_archived: result.superseded_archived,
                 warnings: input.warnings,
                 discipline_notes: disciplined.notes,
               },
@@ -970,6 +973,7 @@ export function createMcpServer(): Server {
                   },
                   project: disciplined.project,
                   created_by: item.created_by,
+                  supersedes: item.supersedes,
                 };
                 return { index, thought, notes: disciplined.notes };
               } catch (err) {

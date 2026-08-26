@@ -62,6 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two-day cadence.
 
 ### Fixed
+- `supersedes` on `capture_thought` / `POST /memories` archives the thought it
+  replaces, in the same transaction as the insert. It was stored as a bare
+  pointer and nothing else happened: the caller was told the write succeeded
+  while both copies stayed live and searchable, with no supersession marker on
+  either — worse than the parameter being ignored, since the name promises
+  otherwise. The response now reports `supersedes` and `superseded_archived`.
+  In `capture_thoughts` / `POST /memories/batch` the value was read by the
+  duplicate check and then dropped before the INSERT, so declaring a replacement
+  in a batch did nothing but switch off the guard that would have caught the
+  copy it created; batch items now honour it exactly as single captures do.
 - `update_thought` (REST: `PUT /memories/:id`) reports an `embedding_truncated`
   warning when an edit outgrows the embedder's context, and clears the flag when
   a later edit fits again. Capture has warned about this since the check was

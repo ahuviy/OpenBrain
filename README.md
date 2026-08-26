@@ -263,7 +263,7 @@ instead of Pinecone. Reason: self-hosted, lower cost, simpler stack."
 | `people` | string[] | inferred | People mentioned, by canonical full name |
 | `project` | string | — | Scope to a project/workspace |
 | `source` | string | `"mcp"` | Provenance tracking (which session/tool) |
-| `supersedes` | string | — | UUID of a prior thought this replaces |
+| `supersedes` | string | — | UUID of a prior thought this replaces. The named thought is **archived** in the same write, so it drops out of search and list results |
 | `created_by` | string | — | User who created this thought (optional, for multi-developer teams) |
 | `force` | boolean | false | Write even if a near-identical thought already exists |
 | `new_topics` | boolean | false | Allow this capture to mint topic tags the brain has never used |
@@ -736,7 +736,9 @@ curl -X PUT http://localhost:8000/memories/a1b2c3d4-... \
   -H "Content-Type: application/json" \
   -d '{"content": "Decision: Switched from Redis to Memcached for session caching. Reason: simpler ops, sufficient for our read pattern."}'
 
-# Option B: Capture a new decision that supersedes the old one
+# Option B: Capture a new decision that supersedes the old one.
+# The superseded thought is archived by the same write — it stops appearing in
+# search and list results, but `include_archived: true` still brings it back.
 curl -X POST http://localhost:8000/memories \
   -H "Content-Type: application/json" \
   -d '{
@@ -1373,7 +1375,7 @@ These features do not exist in Nate's original and were built for active softwar
 |------|----------------|-----------|
 | `search_thoughts` | ✅ query, limit, threshold | ✅ + project, type, topic, include_archived |
 | `list_thoughts` | ✅ type, topic, person, days | ✅ + project, include_archived |
-| `capture_thought` | ✅ content | ✅ + project, source, supersedes |
+| `capture_thought` | ✅ content | ✅ + project, source, supersedes (archives the predecessor) |
 | `thought_stats` | ✅ (no params) | ✅ + project |
 | `update_thought` | ❌ | ✅ id, content, type, topics, people (re-embeds; preserves curated metadata) |
 | `delete_thought` | ❌ | ✅ id |
