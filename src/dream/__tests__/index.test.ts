@@ -38,6 +38,7 @@ function candidate(id: string, overrides: Partial<CandidateRow> = {}): Candidate
 
 interface Recorded {
   listedSince: Date[];
+  listedUntil: Array<Date | undefined>;
   runs: Array<{ project: string; status: string; dry_run: boolean; actions: unknown[] }>;
   changes: Array<{ id: string; topics?: string[]; people?: string[] }>;
   vocabulary: string[];
@@ -58,12 +59,16 @@ function fakePort(
 ) {
   const recorded: Recorded = {
     vocabulary: [], merges: 0, proposals: 0, watermarks: [], changes: [], runs: [], listedSince: [],
+    listedUntil: [],
   };
   const port: DreamPort = {
     loadWatermark: async () => new Date("2026-08-01T00:00:00Z"),
-    listCandidates: async (watermark) => {
+    listCandidates: async (watermark, _project, until) => {
       recorded.listedSince.push(watermark);
-      return rows;
+      recorded.listedUntil.push(until);
+      return until === undefined
+        ? rows
+        : rows.filter((row) => row.updated_at.getTime() <= until.getTime());
     },
     neighbours: async (row) => neighbourMap[row.id] ?? [],
     knownTopics: async () => ["forex"],
@@ -86,6 +91,9 @@ function fakePort(
       recorded.proposals += 1;
       return "proposal-1";
     },
+    loadBackfill: async () => ({ cursor: null, done: false }),
+    saveBackfill: async () => {},
+    oldestThought: async () => rows[0]?.updated_at,
     saveWatermark: async (_p, watermark) => {
       recorded.watermarks.push(watermark);
     },
@@ -226,6 +234,52 @@ describe("runDream", () => {
         ],
       },
     ]);
+  });
+
+  it("reads only the slice a bounded window names", async () => {
+    // A backfill slice: `(since, until]`. Without the upper bound the sweep
+    // would re-read everything above it on every run — the forward hand's work,
+    // paid for twice.
+    const rows = [
+      candidate("old", { updated_at: new Date("2026-06-10T10:00:00Z") }),
+      candidate("new", { updated_at: new Date("2026-08-10T10:00:00Z") }),
+    ];
+    const { port, recorded } = fakePort(rows, {});
+
+    const result = await runDream(
+      port,
+      judgeIndependent,
+      synthesise,
+      config,
+      thresholds,
+      { since: "2026-06-01T00:00:00Z", until: "2026-07-01T00:00:00Z" },
+      now,
+    );
+
+    expect(result.candidates).toBe(1);
+    expect(recorded.listedUntil[0]).toEqual(new Date("2026-07-01T00:00:00Z"));
+  });
+
+  it("settles no watermark on a bounded window", async () => {
+    // The sweep reads rows the forward hand has already passed. Writing the
+    // state from them would stamp last_run_at and last_run_stats over the
+    // forward run's, so the two hands would overwrite each other's history.
+    const rows = [candidate("old", { updated_at: new Date("2026-06-10T10:00:00Z") })];
+    const { port, recorded } = fakePort(rows, {});
+
+    await runDream(
+      port,
+      judgeIndependent,
+      synthesise,
+      config,
+      thresholds,
+      { since: "2026-06-01T00:00:00Z", until: "2026-07-01T00:00:00Z" },
+      now,
+    );
+
+    expect(recorded.watermarks).toEqual([]);
+    // Still recorded as a run: a sweep that left no trace could not be audited.
+    expect(recorded.runs).toHaveLength(1);
   });
 
   it("holds the watermark behind thoughts left in a proposal", async () => {

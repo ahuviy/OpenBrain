@@ -37,6 +37,9 @@ function deps(overrides: Partial<ScheduledDreamDeps> = {}): ScheduledDreamDeps {
   return {
     listProjects: async () => ["", "markets"],
     dream: async () => result(),
+    // The default is a corpus with nothing left to sweep: most tests here are
+    // about the forward hand, and a sweep in every one of them would be noise.
+    backfill: async () => undefined,
     notify: vi.fn(async (_notification: Notification) => undefined),
     recordFailure: async () => undefined,
     log: () => undefined,
@@ -198,6 +201,69 @@ describe("runScheduledDream", () => {
       },
     }));
 
+    expect(outcome.exitCode).toBe(1);
+  });
+
+  it("reports the stretch of history the sweep covered", async () => {
+    // The sweep is the half nobody sees: it consolidates thoughts written
+    // months ago, so a report that only spoke about new ones would say
+    // "nothing" through an entire backfill.
+    const notify = vi.fn(async (_notification: Notification) => undefined);
+
+    await runScheduledDream(deps({
+      listProjects: async () => ["markets"],
+      notify,
+      backfill: async () => ({
+        slice: {
+          from: new Date("2026-07-02T00:00:00Z"),
+          until: new Date("2026-08-01T00:00:00Z"),
+          cursor: new Date("2026-07-02T00:00:00Z"),
+          done: false,
+        },
+        result: result({ applied: { vocabulary: 3 }, candidates: 11 }),
+      }),
+    }));
+
+    const message = notify.mock.calls[0]![0].message;
+    expect(message).toContain("backfill 2026-07-02..2026-08-01: 11 thoughts, applied vocabulary 3");
+  });
+
+  it("says when the sweep has reached the end of the corpus", async () => {
+    // The one line that tells someone the backlog is done and the runs going
+    // quiet is the corpus being consolidated rather than the job being broken.
+    const notify = vi.fn(async (_notification: Notification) => undefined);
+
+    await runScheduledDream(deps({
+      listProjects: async () => ["markets"],
+      notify,
+      backfill: async () => ({
+        slice: {
+          from: new Date("2026-06-30T23:59:59.999Z"),
+          until: new Date("2026-07-30T00:00:00Z"),
+          cursor: new Date("2026-06-30T23:59:59.999Z"),
+          done: true,
+        },
+        result: result({ candidates: 2 }),
+      }),
+    }));
+
+    expect(notify.mock.calls[0]![0].message).toContain("sweep complete");
+  });
+
+  it("keeps the forward run when the sweep fails, and still reports the failure", async () => {
+    // The consolidation someone is waiting on already happened and is already
+    // recorded; losing it because a sweep of last spring threw would trade new
+    // work for old.
+    const outcome = await runScheduledDream(deps({
+      listProjects: async () => ["markets"],
+      dream: async () => result({ applied: { merge: 1 } }),
+      backfill: async () => {
+        throw new Error("embedder timeout");
+      },
+    }));
+
+    expect(outcome.runs).toMatchObject([{ project: "markets", applied: { merge: 1 } }]);
+    expect(outcome.failures).toEqual([{ project: "markets", error: "embedder timeout" }]);
     expect(outcome.exitCode).toBe(1);
   });
 

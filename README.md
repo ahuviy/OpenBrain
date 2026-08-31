@@ -340,7 +340,8 @@ needs its own call — `thought_stats` lists them.
 Every improvement is therefore forward-only unless you ask otherwise: alias unification shipped today
 will not touch splits living in thoughts written last month. `since` is how you reach them —
 `dream(since: "1970-01-01", dry_run: true)` first, since a full pass embeds and judges far more than
-an incremental one, and a backfill never rewinds the stored watermark.
+an incremental one, and a backfill never rewinds the stored watermark. The scheduled run does this
+for you, a bounded slice at a time — see [the backfill sweep](#the-backfill-sweep).
 
 `applied.vocabulary` counts THOUGHTS rewritten, not tags changed: one thought whose topics and people
 both move is one. `applied_items` carries the detail — every immediately-applied change, with the
@@ -407,6 +408,36 @@ it**: an unreviewed proposal holds the watermark back and its pairs are re-judge
 With `contradiction` off the destructive half is still safe — a merge the judge blocks stays
 blocked, and the count reaches you in the ntfy summary as `skipped: merge_contradicts N`.
 
+#### The backfill sweep
+
+A watermark makes a run cost a function of activity rather than of history, and pays for it by never
+looking back. Left at that, a schedule consolidates only what you wrote since the last run — which on
+a quiet corpus is nothing at all, while everything written before the rules existed sits behind the
+watermark permanently. That is most of a brain, and the part most likely to need the work.
+
+So each scheduled project gets two passes. The forward one reads everything since the watermark. The
+**backward** one reads a single bounded slice of history ending at a cursor that starts at the
+watermark and walks back `DREAM_BACKFILL_DAYS` (default 30) per run, until it reaches the oldest live
+thought and stops. Bounded, so a large corpus cannot make one run unaffordable; resumable, so a
+failure costs one slice rather than the sweep; and finite, so it ends rather than re-embedding the
+corpus for ever. Progress lives in `dream_state.backfill_cursor`, the sweep's own runs are recorded
+under `trigger: "schedule-backfill"`, and the ntfy summary names the window it covered:
+
+```
+markets: applied nothing; proposed nothing
+  backfill 2026-07-02..2026-08-01: 11 thoughts, applied vocabulary 3
+```
+
+`DREAM_BACKFILL_OPS` narrows what a slice does, and defaults to `vocabulary,merge` — the sweep
+proposes nothing, because one open proposal per project supersedes the last and a sweep would keep
+replacing the proposal drawn from your newest thoughts with one about history nobody asked to review.
+Set `DREAM_BACKFILL_DAYS=0` to turn the sweep off. To run it again after changing a consolidation
+rule that should reach old thoughts, clear the columns it keeps its place in:
+
+```sql
+UPDATE dream_state SET backfill_cursor = NULL, backfill_done_at = NULL;
+```
+
 ### `dream_history`
 
 What past runs did — the retro view. One row per project per run, including **failed** runs, so a
@@ -418,7 +449,9 @@ project whose consolidation has been dying for a month is visible rather than me
 | `limit` | number | Runs to return, newest first (default 20, max 200) |
 
 Each row carries the counts (`applied`, `proposed`, `skipped`), the `trigger` (`mcp`, `rest`,
-`schedule`), whether it was a `dry_run`, and an `actions` log — the part counts cannot give you:
+`schedule`, `schedule-backfill`), whether it was a `dry_run`, the window it was allowed to look at
+(`watermark_from`/`watermark_to` — a stuck watermark and a quiet corpus are otherwise the same row),
+and an `actions` log — the part counts cannot give you:
 
 ```json
 {

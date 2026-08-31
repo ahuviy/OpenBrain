@@ -11,6 +11,13 @@
  *
  * `DREAM_OPS` narrows the operations (e.g. "vocabulary,merge") for a schedule
  * that should not spend judgments on contradictions nobody is reviewing.
+ *
+ * Each project gets two passes: the forward one over everything written since
+ * the watermark, and one backward slice of the history the watermark has left
+ * behind for ever. `DREAM_BACKFILL_DAYS` sizes the slice and `DREAM_BACKFILL_OPS`
+ * narrows it further — by default the sweep applies vocabulary and merges and
+ * proposes nothing, because one open proposal per project supersedes the last
+ * and a sweep would keep replacing the one drawn from the newest thoughts.
  */
 
 import { closePool, getPool } from "../db/connection.js";
@@ -18,8 +25,9 @@ import { insertDreamRun, listProjects } from "../db/queries.js";
 import { getEmbedder } from "../embedder/index.js";
 import { getDisciplineConfig } from "../capture/discipline.js";
 import { runDream } from "../dream/index.js";
+import { runBackfillSlice } from "../dream/backfill.js";
 import { createDreamPort } from "../dream/port.js";
-import { getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
+import { getBackfillWindowMs, getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
 import { DREAM_OPS, type DreamOp } from "../dream/constants.js";
 import { sendNotification } from "../notify.js";
 import { runScheduledDream } from "./scheduled-dream.js";
@@ -36,28 +44,48 @@ function requestedOps(raw: string | undefined): DreamOp[] | undefined {
   return requested as DreamOp[];
 }
 
+const DEFAULT_BACKFILL_OPS: DreamOp[] = ["vocabulary", "merge"];
+
 async function main(): Promise<void> {
   const pool = getPool();
   const embedder = getEmbedder();
   const discipline = getDisciplineConfig();
   const ops = requestedOps(process.env.DREAM_OPS);
+  const backfillOps = requestedOps(process.env.DREAM_BACKFILL_OPS) ?? DEFAULT_BACKFILL_OPS;
+  const backfillWindowMs = getBackfillWindowMs();
+  const port = createDreamPort(pool, embedder, getProposalTtlHours());
+
+  const consolidate = (options: Parameters<typeof runDream>[5]) =>
+    runDream(
+      port,
+      (a, b) =>
+        embedder.judgeContradiction({ id: a.id, content: a.content }, { id: b.id, content: b.content }),
+      (contents) => embedder.synthesise(contents),
+      {
+        topicAliases: discipline.topicAliases,
+        personAliases: discipline.personAliases,
+        selfNames: discipline.selfNames,
+      },
+      getDreamThresholds(),
+      options,
+      () => new Date(),
+    );
 
   const outcome = await runScheduledDream({
     listProjects: () => listProjects(pool),
-    dream: (project) =>
-      runDream(
-        createDreamPort(pool, embedder, getProposalTtlHours()),
-        (a, b) =>
-          embedder.judgeContradiction({ id: a.id, content: a.content }, { id: b.id, content: b.content }),
-        (contents) => embedder.synthesise(contents),
-        {
-          topicAliases: discipline.topicAliases,
-          personAliases: discipline.personAliases,
-          selfNames: discipline.selfNames,
-        },
-        getDreamThresholds(),
-        { project, ops, trigger: "schedule" },
-        () => new Date(),
+    dream: (project) => consolidate({ project, ops, trigger: "schedule" }),
+    backfill: (project) =>
+      runBackfillSlice(port, project, backfillWindowMs, (slice) =>
+        // Recorded under its own trigger: a sweep of 2026-06 and a run over
+        // yesterday's thoughts are different work, and a history that called
+        // both "schedule" could not tell which hand did what.
+        consolidate({
+          project,
+          ops: backfillOps,
+          since: slice.from,
+          until: slice.until,
+          trigger: "schedule-backfill",
+        }),
       ),
     recordFailure: async (project, error) => {
       await insertDreamRun(pool, {

@@ -14,6 +14,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type pg from "pg";
 
 import dreamPortContractTests from "../integration-suites/dream-port-contract.suite.js";
+import { runBackfillSlice } from "../dream/backfill.js";
 import { createDreamPort, loadProposalReview } from "../dream/port.js";
 import { runDream } from "../dream/index.js";
 import { getDreamThresholds } from "../dream/config.js";
@@ -321,6 +322,147 @@ describe.skipIf(!reachable)("watermark advancement end to end", () => {
     expect(history[0]!.watermark_from!.getTime()).toBeGreaterThan(
       history[1]!.watermark_from!.getTime(),
     );
+  });
+});
+
+describe.skipIf(!reachable)("neighbour hydration", () => {
+  let database: TestDatabase;
+  let pool: pg.Pool;
+
+  beforeAll(async () => {
+    database = await connectTestDatabase();
+    pool = database.pool;
+  });
+
+  afterAll(async () => {
+    await database?.close();
+  });
+
+  it("hands back the columns a merge builds its canonical row from", async () => {
+    // `match_thoughts` projects id/content/metadata/similarity/created_at and
+    // nothing else. A merge takes the project and the author from whichever
+    // source is OLDEST, which is usually a neighbour rather than the candidate
+    // that found it — so an unhydrated neighbour silently writes the merged
+    // thought with a NULL project and no author.
+    await database.truncate();
+    const port = createDreamPort(pool, stubEmbedder, 72);
+
+    await insertThought(pool, "aaaaaaaaaaaaaaaaaaaa", testEmbedding(20), {} as ThoughtRow["metadata"], "markets", undefined, "ahuvi");
+    await insertThought(pool, "bbbbbbbbbbbbbbbbbbbb", testEmbedding(20), {} as ThoughtRow["metadata"], "markets", undefined, "ahuvi");
+
+    const [candidate] = await port.listCandidates(new Date(0), "markets");
+    const found = await port.neighbours(candidate!, 0.8);
+
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ project: "markets", created_by: "ahuvi" });
+    expect(found[0]!.similarity).toBeGreaterThanOrEqual(0.8);
+    expect(found[0]!.id).not.toBe(candidate!.id);
+  });
+});
+
+describe.skipIf(!reachable)("backfill sweep end to end", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  let database: TestDatabase;
+  let pool: pg.Pool;
+
+  beforeAll(async () => {
+    database = await connectTestDatabase();
+    pool = database.pool;
+  });
+
+  afterAll(async () => {
+    await database?.close();
+  });
+
+  it("consolidates duplicates the forward watermark had left behind for ever", async () => {
+    // The gap this closes: the watermark only moves forward, so two duplicates
+    // written before a run existed are behind it permanently — no schedule ever
+    // looks at them again. Four days of scheduled runs applied three vocabulary
+    // rewrites while a full pass over one project found sixteen findings.
+    await database.truncate();
+
+    const port = createDreamPort(pool, stubEmbedder, 72);
+    // Equal length, so the deterministic stub embeds them identically and they
+    // cluster above the merge threshold — the duplicate case, without a provider.
+    const older = await insertThought(pool, "aaaaaaaaaaaaaaaaaaaa", testEmbedding(20), {} as ThoughtRow["metadata"], "markets", undefined, "ahuvi");
+    const newer = await insertThought(pool, "bbbbbbbbbbbbbbbbbbbb", testEmbedding(20), {} as ThoughtRow["metadata"], "markets", undefined, "ahuvi");
+
+    // Both written 45 days ago, and the forward hand has long since passed them.
+    await pool.query("ALTER TABLE thoughts DISABLE TRIGGER set_updated_at");
+    await pool.query(
+      `UPDATE thoughts SET updated_at = now() - interval '45 days' WHERE id = ANY($1::uuid[])`,
+      [[older.id, newer.id]],
+    );
+    await pool.query("ALTER TABLE thoughts ENABLE TRIGGER set_updated_at");
+    await port.loadWatermark("markets");
+    await port.saveWatermark("markets", new Date(), {});
+
+    const consolidate = (options: Parameters<typeof runDream>[5]) =>
+      runDream(
+        port,
+        async () => ({ verdict: "independent", reason: "stub" }),
+        async () => "stub summary",
+        { topicAliases: {}, personAliases: {}, selfNames: [] },
+        getDreamThresholds(),
+        options,
+        () => new Date(),
+      );
+
+    // The forward hand, first: it has nothing to look at, which is exactly how
+    // this looked in production for four runs running.
+    const forward = await consolidate({ project: "markets", ops: ["merge"] });
+    expect(forward.candidates).toBe(0);
+    expect(forward.applied.merge).toBeUndefined();
+
+    const sweep = () =>
+      runBackfillSlice(port, "markets", 30 * DAY, (slice) =>
+        consolidate({
+          project: "markets",
+          ops: ["merge"],
+          since: slice.from,
+          until: slice.until,
+          trigger: "schedule-backfill",
+        }),
+      );
+
+    // First slice covers the last 30 days — the duplicates are older than that,
+    // so it finds nothing and the cursor still has to move, or the sweep stalls.
+    const first = await sweep();
+    expect(first?.result.candidates).toBe(0);
+    expect(first?.slice.done).toBe(false);
+
+    // Second slice reaches back over them.
+    const second = await sweep();
+    expect(second?.result.applied.merge).toBe(1);
+    expect(second?.slice.done).toBe(true);
+
+    const { rows: live } = await pool.query<{ id: string; content: string; project: string | null; created_by: string | null }>(
+      `SELECT id, content, project, created_by
+       FROM thoughts WHERE archived = false AND COALESCE(project, '') = 'markets'`,
+    );
+    expect(live).toHaveLength(1);
+    expect(live[0]!.content).toContain("aaaaaaaaaaaaaaaaaaaa");
+    expect(live[0]!.id).not.toBe(older.id);
+    // The merged thought stays in its project and keeps its author: a canonical
+    // row written with a NULL project is out of the brain the sources belonged
+    // to, invisible to every project-scoped search and to every later run.
+    expect(live[0]!.project).toBe("markets");
+    expect(live[0]!.created_by).toBe("ahuvi");
+
+    // The forward watermark is untouched by the sweep: a watermark taken from
+    // 45-day-old rows would rewind it over the whole corpus it had settled.
+    const { rows: state } = await pool.query<{ watermark: Date; done: Date | null }>(
+      `SELECT watermark, backfill_done_at AS done FROM dream_state WHERE project = 'markets'`,
+    );
+    expect(state[0]!.watermark.getTime()).toBeGreaterThan(Date.now() - DAY);
+    expect(state[0]!.done).toBeInstanceOf(Date);
+
+    // And a finished sweep does not start again.
+    expect(await sweep()).toBeUndefined();
+
+    const history = await port.listRuns("markets", 10);
+    expect(history.filter((run) => run.trigger === "schedule-backfill")).toHaveLength(2);
   });
 });
 

@@ -9,6 +9,7 @@
  */
 
 import type { DreamPort } from "../index.js";
+import type { BackfillState } from "../backfill.js";
 import type { CandidateRow } from "../candidates.js";
 import type { ThoughtRow } from "../../db/queries.js";
 import type { ProposalItem } from "../proposal.js";
@@ -33,6 +34,7 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
   let sequence = 0;
   let thoughts: FakeThought[] = [];
   let watermarks = new Map<string, Date>();
+  let backfills = new Map<string, BackfillState>();
   let openProposals = new Map<string, string>();
   const resetRuns = () => runs.splice(0, runs.length);
   let proposalSequence = 0;
@@ -60,12 +62,14 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
       return watermarks.get(project) ?? new Date(0);
     },
 
-    async listCandidates(watermark, project) {
+    async listCandidates(watermark, project, until) {
       return thoughts.filter(
         (row) =>
           !row.archived &&
           bucket(row.project) === project &&
-          row.updated_at.getTime() > watermark.getTime(),
+          row.updated_at.getTime() > watermark.getTime() &&
+          // A millisecond wide, like the pg port: see listCandidatesSince.
+          (until === undefined || row.updated_at.getTime() < until.getTime() + 1),
       );
     },
 
@@ -146,6 +150,23 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
     async saveWatermark(project, watermark) {
       watermarks.set(project, watermark);
     },
+
+    async loadBackfill(project) {
+      return backfills.get(project) ?? { cursor: null, done: false };
+    },
+
+    async saveBackfill(project, cursor, done) {
+      backfills.set(project, { cursor, done: done || (backfills.get(project)?.done ?? false) });
+    },
+
+    async oldestThought(project) {
+      let oldest: Date | undefined;
+      for (const row of thoughts) {
+        if (row.archived || bucket(row.project) !== project) continue;
+        if (!oldest || row.updated_at.getTime() < oldest.getTime()) oldest = row.updated_at;
+      }
+      return oldest;
+    },
   };
 
   return {
@@ -174,6 +195,7 @@ export function fakeDreamStore(now: () => Date = () => new Date()): FakeDreamSto
       proposalSequence = 0;
       thoughts = [];
       watermarks = new Map();
+      backfills = new Map();
       openProposals = new Map();
       resetRuns();
     },

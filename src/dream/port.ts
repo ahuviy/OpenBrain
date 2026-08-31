@@ -21,7 +21,9 @@ import {
   listThoughtsTagged,
   loadProposal,
   lockDreamState,
+  oldestThoughtAt,
   mergeThoughtMetadata,
+  saveBackfillCursor,
   saveDreamState,
   searchThoughts,
   setProposalStatus,
@@ -53,13 +55,47 @@ export function createDreamPort(pool: pg.Pool, embedder: Embedder, ttlHours: num
       }
     },
 
-    listCandidates: (watermark, project) => listCandidatesSince(pool, watermark, project),
+    listCandidates: (watermark, project, until) =>
+      listCandidatesSince(pool, watermark, project, undefined, until),
+
+    async loadBackfill(project) {
+      const client = await pool.connect();
+      try {
+        const state = await lockDreamState(client, project, EPOCH);
+        return { cursor: state.backfill_cursor, done: state.backfill_done_at !== null };
+      } finally {
+        client.release();
+      }
+    },
+
+    async saveBackfill(project, cursor, done) {
+      const client = await pool.connect();
+      try {
+        await saveBackfillCursor(client, project, cursor, done);
+      } finally {
+        client.release();
+      }
+    },
+
+    oldestThought: (project) => oldestThoughtAt(pool, project),
 
     async neighbours(row: CandidateRow, threshold) {
       const embedding = await embedder.generateEmbedding(row.content);
       // project is passed only because the CALLER's row carries one; never a default.
       const found = await searchThoughts(pool, embedding, 6, threshold, {}, row.project ?? undefined, false, undefined);
-      return found.filter((neighbour) => neighbour.id !== row.id);
+      const matches = found.filter((neighbour) => neighbour.id !== row.id);
+      if (matches.length === 0) return [];
+
+      // Hydrated, not returned as the search gave them: match_thoughts projects
+      // only id/content/metadata/similarity/created_at, so a neighbour carries
+      // no `project` and no `created_by`. A merge builds its canonical row from
+      // whichever source is oldest — frequently a neighbour — so an unhydrated
+      // one writes the merged thought with a NULL project: out of the project it
+      // belonged to, invisible to every project-scoped search and to every later
+      // dream run, with its author dropped.
+      const similarity = new Map(matches.map((match) => [match.id, match.similarity]));
+      const hydrated = await listThoughtsByIds(pool, [...similarity.keys()]);
+      return hydrated.map((neighbour) => ({ ...neighbour, similarity: similarity.get(neighbour.id) ?? 0 }));
     },
 
     knownTopics: (project) => getTopicVocabulary(pool, project === "" ? undefined : project),

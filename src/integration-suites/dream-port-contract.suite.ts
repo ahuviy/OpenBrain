@@ -69,6 +69,56 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
       });
     });
 
+    describe("backfill state", () => {
+      it("starts every project unswept", async () => {
+        expect(await port.loadBackfill("never-swept")).toEqual({ cursor: null, done: false });
+      });
+
+      it("remembers how far back the sweep has got", async () => {
+        await port.loadWatermark("markets");
+
+        await port.saveBackfill("markets", new Date("2026-07-02T00:00:00.000Z"), false);
+
+        const state = await port.loadBackfill("markets");
+        expect(state.cursor?.toISOString()).toBe("2026-07-02T00:00:00.000Z");
+        expect(state.done).toBe(false);
+      });
+
+      it("stays finished once the sweep has reached the oldest thought", async () => {
+        // Finite by design: a sweep that forgot it had finished would re-embed
+        // the whole corpus every few runs for ever.
+        await port.loadWatermark("markets");
+        await port.saveBackfill("markets", new Date("2026-06-01T00:00:00.000Z"), true);
+
+        expect((await port.loadBackfill("markets")).done).toBe(true);
+      });
+
+      it("keeps projects independent", async () => {
+        await port.loadWatermark("a");
+        await port.loadWatermark("b");
+
+        await port.saveBackfill("a", new Date("2026-07-02T00:00:00.000Z"), true);
+
+        expect(await port.loadBackfill("b")).toEqual({ cursor: null, done: false });
+      });
+
+      it("reports the oldest live thought, and nothing for an empty project", async () => {
+        expect(await port.oldestThought("markets")).toBeUndefined();
+
+        await driver.seed({ content: "the only thought", project: "markets" });
+
+        expect(await port.oldestThought("markets")).toBeInstanceOf(Date);
+      });
+
+      it("does not let an archived thought hold the sweep's floor down", async () => {
+        // The floor decides when the sweep is finished. An archived row — a
+        // merge's source — is not a thought any run would consolidate again.
+        await driver.seed({ content: "merged away", project: "markets", archived: true });
+
+        expect(await port.oldestThought("markets")).toBeUndefined();
+      });
+    });
+
     describe("candidates", () => {
       it("returns thoughts in the requested project only", async () => {
         await driver.seed({ content: "in scope", project: "markets" });
@@ -110,6 +160,27 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
         const rows = await port.listCandidates(new Date("2099-01-01T00:00:00Z"), "markets");
 
         expect(rows).toEqual([]);
+      });
+
+      it("closes the window at the top when a backfill slice names one", async () => {
+        // A slice reads `(from, until]`. Without the upper bound every sweep
+        // would re-read everything the forward hand has already consolidated.
+        await driver.seed({ content: "one", project: "markets" });
+
+        const rows = await port.listCandidates(new Date(0), "markets", new Date(0));
+
+        expect(rows).toEqual([]);
+      });
+
+      it("includes a row stamped exactly at the window's top", async () => {
+        // Inclusive on purpose: the slices tile the timeline with an exclusive
+        // floor, so an exclusive top too would drop a row at every boundary.
+        await driver.seed({ content: "one", project: "markets" });
+        const [row] = await port.listCandidates(new Date(0), "markets");
+
+        const rows = await port.listCandidates(new Date(0), "markets", row!.updated_at);
+
+        expect(rows.map((candidate: CandidateRow) => candidate.content)).toEqual(["one"]);
       });
     });
 

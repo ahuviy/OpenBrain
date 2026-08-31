@@ -636,31 +636,74 @@ export interface DreamStateRow {
   project: string;
   watermark: Date;
   last_run_at: Date;
+  /**
+   * How far back the backward-moving sweep has consolidated. NULL means it has
+   * not started, and it starts at the watermark; `backfill_done_at` is stamped
+   * once it reaches the oldest thought and stops the sweep from repeating.
+   */
+  backfill_cursor: Date | null;
+  backfill_done_at: Date | null;
 }
 
 /**
  * Rows changed since the watermark. Archived rows are excluded: a merge archives
  * its sources, and re-selecting them would re-cluster what was just consolidated.
+ *
+ * `until` closes the window at the top, which is what a backfill slice is: the
+ * forward hand reads `(watermark, ∞)` and the backward one reads one bounded
+ * `(from, until]` slice of the history the forward hand never looked at.
+ *
+ * The top is compared a millisecond wide because `updated_at` keeps microseconds
+ * and a JS Date does not: a bound taken from a row's own stamp is strictly below
+ * the value stored, so `updated_at <= until` would drop the row that defined the
+ * boundary. Slices tile the timeline, so the cost is that a row within a
+ * millisecond of a boundary is read by both neighbouring slices — every
+ * operation is idempotent against that, while skipping one is silent data left
+ * unconsolidated for ever.
  */
 export async function listCandidatesSince(
   pool: pg.Pool,
   watermark: Date,
   project: string,
-  limit: number = 500
+  limit: number = 500,
+  until?: Date
 ): Promise<CandidateRow[]> {
   const { rows } = await pool.query<CandidateRow>(
     `SELECT id, content, metadata, project, created_by, archived, supersedes, created_at, updated_at
      FROM thoughts
      WHERE updated_at > $1
+       AND ($4::timestamptz IS NULL OR updated_at < $4 + interval '1 millisecond')
        AND archived = false
        AND embedding IS NOT NULL
        AND COALESCE(project, '') = $2
      ORDER BY updated_at ASC
      LIMIT $3`,
-    [watermark, project, limit]
+    [watermark, project, limit, until ?? null]
   );
 
   return rows;
+}
+
+/**
+ * The oldest live thought in a project, or undefined when it has none.
+ *
+ * The backfill sweep needs a floor: without one it walks windows backwards to
+ * the epoch, paying a query per empty decade, and can never say it is finished.
+ */
+export async function oldestThoughtAt(
+  pool: pg.Pool,
+  project: string
+): Promise<Date | undefined> {
+  const { rows } = await pool.query<{ oldest: Date | null }>(
+    `SELECT min(updated_at) AS oldest
+     FROM thoughts
+     WHERE archived = false
+       AND embedding IS NOT NULL
+       AND COALESCE(project, '') = $1`,
+    [project]
+  );
+
+  return rows[0]?.oldest ?? undefined;
 }
 
 /**
@@ -889,12 +932,13 @@ export async function lockDreamState(
     `INSERT INTO dream_state (project, watermark)
      VALUES ($1, $2)
      ON CONFLICT (project) DO UPDATE SET project = EXCLUDED.project
-     RETURNING project, watermark, last_run_at`,
+     RETURNING project, watermark, last_run_at, backfill_cursor, backfill_done_at`,
     [project, epoch]
   );
 
   const { rows: locked } = await client.query<DreamStateRow>(
-    `SELECT project, watermark, last_run_at FROM dream_state WHERE project = $1 FOR UPDATE`,
+    `SELECT project, watermark, last_run_at, backfill_cursor, backfill_done_at
+     FROM dream_state WHERE project = $1 FOR UPDATE`,
     [project]
   );
 
@@ -912,6 +956,30 @@ export async function saveDreamState(
      SET watermark = $2, last_run_at = now(), last_run_stats = $3::jsonb
      WHERE project = $1`,
     [project, watermark, JSON.stringify(stats)]
+  );
+}
+
+/**
+ * Moves the backward sweep's cursor, and stamps it finished when it has reached
+ * the oldest thought.
+ *
+ * Separate from saveDreamState because the two hands move independently: a
+ * backfill slice must never write the forward watermark — it reads old rows, and
+ * saving a watermark from them would rewind the forward hand over the whole
+ * corpus it had already settled.
+ */
+export async function saveBackfillCursor(
+  client: pg.PoolClient,
+  project: string,
+  cursor: Date,
+  done: boolean
+): Promise<void> {
+  await client.query(
+    `UPDATE dream_state
+     SET backfill_cursor = $2,
+         backfill_done_at = CASE WHEN $3 THEN now() ELSE backfill_done_at END
+     WHERE project = $1`,
+    [project, cursor, done]
   );
 }
 

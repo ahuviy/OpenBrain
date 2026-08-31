@@ -11,6 +11,7 @@ import { normaliseTopic } from "../capture/discipline.js";
 import { clusterByEdges, type SimilarityEdge } from "./cluster.js";
 import { DREAM_OPS, type DreamOp } from "./constants.js";
 import { holdBackWatermark, nextWatermark, type CandidateRow } from "./candidates.js";
+import type { BackfillState } from "./backfill.js";
 import { buildCanonical, canMerge, type CanonicalThought } from "./ops/merge.js";
 import { planVocabularyChange, type VocabularyChange, type VocabularyConfig } from "./ops/vocabulary.js";
 import { inferAliases, mergeAliases, staleSpellings, type VocabularyCounts } from "./ops/aliases.js";
@@ -31,7 +32,8 @@ import type { DreamRunRecord, DreamRunRow, TagField, ThoughtRow } from "../db/qu
 
 export interface DreamPort {
   loadWatermark(project: string): Promise<Date>;
-  listCandidates(watermark: Date, project: string): Promise<CandidateRow[]>;
+  /** `until` closes the window at the top, which is what a backfill slice is. */
+  listCandidates(watermark: Date, project: string, until?: Date): Promise<CandidateRow[]>;
   neighbours(row: CandidateRow, threshold: number): Promise<Array<ThoughtRow & { similarity: number }>>;
   knownTopics(project: string): Promise<string[]>;
   vocabularyCounts(project: string): Promise<VocabularyCounts>;
@@ -40,6 +42,9 @@ export interface DreamPort {
   applyMerge(canonical: CanonicalThought, sources: ThoughtRow[]): Promise<void>;
   saveProposal(project: string, items: ProposalItem[]): Promise<string>;
   saveWatermark(project: string, watermark: Date, stats: Record<string, unknown>): Promise<void>;
+  loadBackfill(project: string): Promise<BackfillState>;
+  saveBackfill(project: string, cursor: Date, done: boolean): Promise<void>;
+  oldestThought(project: string): Promise<Date | undefined>;
   recordRun(run: DreamRunRecord): Promise<void>;
   listRuns(project: string | undefined, limit: number): Promise<DreamRunRow[]>;
 }
@@ -67,6 +72,13 @@ export interface DreamOptions {
   since?: string | Date;
   /** Where the run came from, for reading the history back: mcp, rest, schedule. */
   trigger?: string;
+  /**
+   * Close the window at the top: the run reads `(since, until]` and settles no
+   * watermark. This is a backfill slice — old rows the forward hand has already
+   * passed — and a watermark taken from them would rewind it over the whole
+   * corpus it had settled.
+   */
+  until?: string | Date;
 }
 
 /**
@@ -146,7 +158,8 @@ export async function runDream(
   // per-project lock, and it is the floor the saved watermark cannot go below.
   const stored = await port.loadWatermark(project);
   const watermark = parseSince(options.since) ?? stored;
-  const candidates = await port.listCandidates(watermark, project);
+  const until = parseSince(options.until);
+  const candidates = await port.listCandidates(watermark, project, until);
 
   const byId = new Map<string, ThoughtRow>();
   for (const row of candidates) byId.set(row.id, row);
@@ -329,7 +342,11 @@ export async function runDream(
   const heldIds = new Set(referencedThoughtIds(items));
   const held = candidates.filter((row) => heldIds.has(row.id));
   const settled = holdBackWatermark(advanced, held, stored);
-  if (!dryRun) {
+  // A bounded window is a backfill slice, and its rows are all behind the
+  // forward hand: `nextWatermark` would refuse to move anyway, but writing the
+  // state at all would stamp last_run_at and last_run_stats over the forward
+  // run's, so the two hands would keep overwriting each other's history.
+  if (!dryRun && until === undefined) {
     await port.saveWatermark(project, settled, { applied, proposed, skipped });
   }
 
@@ -352,9 +369,10 @@ export async function runDream(
     started_at: runStartedAt,
     // The window, not just the outcome: a run that applied nothing because its
     // watermark never moved and one that applied nothing because the corpus was
-    // quiet are the same row without this.
+    // quiet are the same row without this. A bounded run records the slice it
+    // read, not the watermark it deliberately left alone.
     watermark_from: watermark,
-    watermark_to: settled,
+    watermark_to: until ?? settled,
   });
 
   return {
