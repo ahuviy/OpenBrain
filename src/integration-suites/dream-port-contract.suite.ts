@@ -246,6 +246,8 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
         proposal_id: null,
         error: null,
         started_at: new Date("2026-08-19T03:00:00Z"),
+        watermark_from: new Date("2026-08-17T03:00:00Z"),
+        watermark_to: new Date("2026-08-19T02:59:00Z"),
         ...overrides,
       });
 
@@ -262,6 +264,10 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
           candidates: 2,
         });
         expect(run!.actions).toEqual([{ kind: "merge", sources: ["a", "b"] }]);
+        // The window, not just the outcome: a run that applied nothing because
+        // its watermark was stuck reads exactly like a quiet corpus without it.
+        expect(run!.watermark_from?.toISOString()).toBe("2026-08-17T03:00:00.000Z");
+        expect(run!.watermark_to?.toISOString()).toBe("2026-08-19T02:59:00.000Z");
       });
 
       it("stores a failed run with its error", async () => {

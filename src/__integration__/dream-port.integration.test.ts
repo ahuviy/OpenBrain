@@ -229,6 +229,101 @@ describe.skipIf(!reachable)("vocabulary unification end to end", () => {
   });
 });
 
+describe.skipIf(!reachable)("watermark advancement end to end", () => {
+  let database: TestDatabase;
+  let pool: pg.Pool;
+
+  beforeAll(async () => {
+    database = await connectTestDatabase();
+    pool = database.pool;
+  });
+
+  afterAll(async () => {
+    await database?.close();
+  });
+
+  it("stops selecting a thought it has already consolidated", async () => {
+    // The bug in production: `thoughts.updated_at` is a timestamptz with
+    // microseconds, the pg driver hands JS a Date truncated to milliseconds, and
+    // a watermark saved at that truncated value stays strictly below what the
+    // `updated_at > watermark` filter compares against. Four scheduled runs over
+    // four days reported one candidate for every project, applied nothing, and
+    // left the watermark exactly where it started.
+    //
+    // Only a real Postgres shows it: the truncation happens in the driver, so
+    // any fake that stores the Date it was given is green while the database is
+    // stuck. Sub-millisecond stamps are forced here rather than hoped for.
+    await database.truncate();
+
+    const port = createDreamPort(pool, stubEmbedder, 72);
+    const seeded = await insertThought(
+      pool,
+      "the corpus has exactly one thought",
+      testEmbedding(12),
+      {} as ThoughtRow["metadata"],
+      "markets",
+      undefined,
+      "ahuvi",
+    );
+    // Backdated well clear of the run's commit horizon, so the only thing that
+    // can keep the row eligible is the microsecond remainder. The trigger that
+    // stamps `updated_at` on UPDATE has to be off for this: it would overwrite
+    // the fixture with now() and quietly test the horizon instead.
+    await pool.query("ALTER TABLE thoughts DISABLE TRIGGER set_updated_at");
+    await pool.query(
+      `UPDATE thoughts
+          SET updated_at = date_trunc('milliseconds', now() - interval '1 day') + interval '789 microseconds'
+        WHERE id = $1`,
+      [seeded.id],
+    );
+    await pool.query("ALTER TABLE thoughts ENABLE TRIGGER set_updated_at");
+
+    const run = (ops: Parameters<typeof runDream>[5]["ops"]) =>
+      runDream(
+        port,
+        async () => ({ verdict: "independent", reason: "stub" }),
+        async () => "stub summary",
+        { topicAliases: {}, personAliases: {}, selfNames: [] },
+        getDreamThresholds(),
+        { project: "markets", ops, trigger: "test" },
+        () => new Date(),
+      );
+
+    const first = await run(["vocabulary"]);
+    expect(first.candidates).toBe(1);
+
+    // The whole assertion: a second run over an unchanged corpus has nothing to
+    // look at. Before the fix this was 1, for ever.
+    const second = await run(["vocabulary"]);
+    expect(second.candidates).toBe(0);
+
+    // Compared inside Postgres, at the precision Postgres stores: the watermark
+    // has to sit strictly above the row's microsecond stamp, which is exactly
+    // what a truncated Date could not do.
+    const { rows: clears } = await pool.query<{ clears: boolean; micro: string }>(
+      `SELECT s.watermark > t.updated_at AS clears,
+              to_char(t.updated_at, 'US') AS micro
+       FROM dream_state s, thoughts t
+       WHERE s.project = 'markets' AND t.id = $1`,
+      [seeded.id],
+    );
+    expect(clears[0]!.micro).toMatch(/789$/);
+    expect(clears[0]!.clears).toBe(true);
+
+    const history = await port.listRuns("markets", 10);
+    expect(history).toHaveLength(2);
+    // Both runs recorded the window they looked at, so a stuck watermark is
+    // visible from the history alone next time.
+    for (const entry of history) {
+      expect(entry.watermark_from).toBeInstanceOf(Date);
+      expect(entry.watermark_to).toBeInstanceOf(Date);
+    }
+    expect(history[0]!.watermark_from!.getTime()).toBeGreaterThan(
+      history[1]!.watermark_from!.getTime(),
+    );
+  });
+});
+
 if (!reachable) {
   describe("pg dream port", () => {
     // Vitest requires at least one collected test in a file; this documents WHY

@@ -34,6 +34,15 @@ export function projectKey(project?: string | null): string {
  * slack window covering the longest transaction expected to be in flight.
  * Anything at or after the horizon stays eligible next run; the cost is
  * re-examining a few rows, which every operation is idempotent against.
+ *
+ * The newest row's stamp is advanced past by a millisecond rather than settled
+ * on. `updated_at` is a timestamptz — microseconds — and a JS Date truncates it
+ * to milliseconds, so a watermark set to the row's own truncated stamp is
+ * strictly BELOW the value stored: `listCandidatesSince` selects on
+ * `updated_at > watermark`, the row qualifies again, and the same row is
+ * re-embedded and re-judged on every run for ever while the watermark never
+ * moves. Milliseconds are the finest resolution reachable from here, so the next
+ * one is the first value that provably covers the row.
  */
 export function nextWatermark(
   rows: CandidateRow[],
@@ -44,12 +53,20 @@ export function nextWatermark(
   if (rows.length === 0) return current;
 
   let newest = current;
+  let observed = false;
   for (const row of rows) {
-    if (row.updated_at.getTime() > newest.getTime()) newest = row.updated_at;
+    if (row.updated_at.getTime() > newest.getTime()) {
+      newest = row.updated_at;
+      observed = true;
+    }
   }
 
+  // Only when a row actually beat the stored watermark: with none, `newest` IS
+  // the stored value and stepping past it would skip rows this run never saw.
+  const past = observed ? new Date(newest.getTime() + 1) : newest;
+
   const horizon = new Date(runStartedAt.getTime() - slackMs);
-  const capped = newest.getTime() > horizon.getTime() ? horizon : newest;
+  const capped = past.getTime() > horizon.getTime() ? horizon : past;
 
   return capped.getTime() > current.getTime() ? capped : current;
 }

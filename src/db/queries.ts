@@ -684,6 +684,13 @@ export interface DreamRunRecord {
   proposal_id: string | null;
   error: string | null;
   started_at: Date;
+  /**
+   * The window the run was allowed to look at. Null on a run that threw before
+   * it had one — and on every row written before migration 008, where claiming
+   * a window would be inventing one.
+   */
+  watermark_from: Date | null;
+  watermark_to: Date | null;
 }
 
 export interface DreamRunRow extends Omit<DreamRunRecord, "started_at"> {
@@ -696,8 +703,10 @@ export async function insertDreamRun(pool: pg.Pool, run: DreamRunRecord): Promis
   const { rows } = await pool.query<{ id: string }>(
     `INSERT INTO dream_runs
        (project, started_at, finished_at, status, dry_run, trigger,
-        applied, proposed, skipped, actions, candidates, clusters, proposal_id, error)
-     VALUES ($1, $2, now(), $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
+        applied, proposed, skipped, actions, candidates, clusters, proposal_id, error,
+        watermark_from, watermark_to)
+     VALUES ($1, $2, now(), $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, $12, $13,
+             $14, $15)
      RETURNING id`,
     [
       run.project,
@@ -713,6 +722,8 @@ export async function insertDreamRun(pool: pg.Pool, run: DreamRunRecord): Promis
       run.clusters,
       run.proposal_id,
       run.error,
+      run.watermark_from,
+      run.watermark_to,
     ]
   );
 
@@ -729,7 +740,8 @@ export async function listDreamRuns(
   limit: number
 ): Promise<DreamRunRow[]> {
   const columns = `id, project, started_at, finished_at, status, dry_run, trigger,
-                   applied, proposed, skipped, actions, candidates, clusters, proposal_id, error`;
+                   applied, proposed, skipped, actions, candidates, clusters, proposal_id, error,
+                   watermark_from, watermark_to`;
 
   const { rows } =
     project === undefined

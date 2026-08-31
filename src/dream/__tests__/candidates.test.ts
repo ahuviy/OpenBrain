@@ -35,12 +35,27 @@ describe("nextWatermark", () => {
   const runStart = new Date("2026-08-15T00:00:00Z");
   const slackMs = 60_000;
 
-  it("advances to the newest row observed when it is safely before the run", () => {
+  it("advances PAST the newest row observed when it is safely before the run", () => {
     const rows = [candidate("2026-08-10T10:00:00Z"), candidate("2026-08-12T10:00:00Z")];
 
     const next = nextWatermark(rows, new Date("2026-08-01T00:00:00Z"), runStart, slackMs);
 
-    expect(next.toISOString()).toBe("2026-08-12T10:00:00.000Z");
+    // One millisecond past, not onto: see the microsecond case below.
+    expect(next.toISOString()).toBe("2026-08-12T10:00:00.001Z");
+  });
+
+  it("clears a row whose stored stamp carries microseconds the Date lost", () => {
+    // The bug this exists for. `updated_at` is a timestamptz — 10:00:00.000789
+    // — and pg hands JS a Date truncated to 10:00:00.000. A watermark saved at
+    // that value is strictly below what Postgres holds, so the next run's
+    // `updated_at > watermark` selects the very same row again: four scheduled
+    // runs reported one candidate per project, applied nothing, and never moved.
+    const rows = [candidate("2026-08-10T10:00:00.000Z")];
+    const storedInPostgres = new Date("2026-08-10T10:00:00.000Z").getTime() + 0.789;
+
+    const next = nextWatermark(rows, new Date("2026-08-01T00:00:00Z"), runStart, slackMs);
+
+    expect(next.getTime()).toBeGreaterThan(storedInPostgres);
   });
 
   it("never advances past the run's commit horizon, even when a row is newer", () => {
@@ -64,6 +79,17 @@ describe("nextWatermark", () => {
     const current = new Date("2026-08-20T00:00:00Z");
 
     expect(nextWatermark([candidate("2026-08-10T10:00:00Z")], current, runStart, slackMs)).toBe(
+      current,
+    );
+  });
+
+  it("does not step past the stored watermark when no row beat it", () => {
+    // Rows can be selected and still not exceed the stored value once a
+    // corpus sweep pulls old rows in. Stepping past then would skip a row
+    // stamped in the millisecond the run never looked at.
+    const current = new Date("2026-08-10T10:00:00.000Z");
+
+    expect(nextWatermark([candidate("2026-08-09T10:00:00Z")], current, runStart, slackMs)).toBe(
       current,
     );
   });

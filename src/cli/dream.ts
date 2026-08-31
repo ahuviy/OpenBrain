@@ -74,6 +74,10 @@ async function main(): Promise<void> {
         proposal_id: null,
         error,
         started_at: new Date(),
+        // A run that threw never settled a window; recording one would claim it
+        // consolidated a range it never finished looking at.
+        watermark_from: null,
+        watermark_to: null,
       });
     },
     notify: async (notification) => {

@@ -350,6 +350,11 @@ export async function runDream(
     proposal_id: proposalId,
     error: null,
     started_at: runStartedAt,
+    // The window, not just the outcome: a run that applied nothing because its
+    // watermark never moved and one that applied nothing because the corpus was
+    // quiet are the same row without this.
+    watermark_from: watermark,
+    watermark_to: settled,
   });
 
   return {

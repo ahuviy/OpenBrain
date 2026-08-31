@@ -577,6 +577,8 @@ describe("insertDreamRun", () => {
       proposal_id: null,
       error: null,
       started_at: new Date("2026-08-19T03:00:00Z"),
+      watermark_from: new Date("2026-08-17T03:00:00Z"),
+      watermark_to: new Date("2026-08-19T02:59:00Z"),
     });
 
     const [sql, params] = mockQuery.mock.calls[0]!;
@@ -605,6 +607,9 @@ describe("insertDreamRun", () => {
       proposal_id: null,
       error: "embedder timeout",
       started_at: new Date("2026-08-19T03:00:00Z"),
+      // A run that threw settled no window.
+      watermark_from: null,
+      watermark_to: null,
     });
 
     expect(mockQuery.mock.calls[0]![1]).toContain("embedder timeout");

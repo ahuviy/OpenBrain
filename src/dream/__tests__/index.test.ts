@@ -249,7 +249,9 @@ describe("runDream", () => {
 
     await runDream(port, judgeIndependent, synthesise, config, thresholds, {}, now);
 
-    expect(recorded.watermarks[0]).toEqual(new Date("2026-08-10T10:00:00Z"));
+    // One millisecond past the newest row read: the stored stamp carries
+    // microseconds a JS Date cannot see, so settling ON it re-selects the row.
+    expect(recorded.watermarks[0]).toEqual(new Date("2026-08-10T10:00:00.001Z"));
   });
 
   it("unifies a person's short and full name, reaching thoughts the watermark excludes", async () => {
@@ -379,7 +381,9 @@ describe("runDream", () => {
       port, judgeContradicts, synthesise, config, thresholds, { ops: ["merge"] }, now,
     );
 
-    expect(recorded.watermarks[0]).toEqual(new Date("2026-08-10T10:00:00Z"));
+    // One millisecond past the newest row read: the stored stamp carries
+    // microseconds a JS Date cannot see, so settling ON it re-selects the row.
+    expect(recorded.watermarks[0]).toEqual(new Date("2026-08-10T10:00:00.001Z"));
   });
 
   it("still proposes the disagreement when contradiction WAS asked for", async () => {
