@@ -29,7 +29,9 @@
     "test:unit": "vitest run",
     "test:all": "node scripts/test-all.js",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:coverage": "vitest run --coverage.enabled --coverage.provider=v8 --coverage.reporter=text --coverage.exclude='**/__tests__/**' --coverage.exclude='src/integration-suites/**'",
     "test:db": "vitest run --config vitest.integration.config.ts src/__integration__/dream-port.integration.test.ts",
+    "test:scheduled": "vitest run --config vitest.integration.config.ts src/__integration__/scheduled-dream.integration.test.ts",
     "test:provenance": "vitest run --config vitest.integration.config.ts src/__integration__/provenance.test.ts",
     "test:mcp": "vitest run --config vitest.integration.config.ts src/__integration__/http-app.integration.test.ts src/__integration__/oauth.integration.test.ts",
     "test:api": "vitest run --config vitest.integration.config.ts src/__integration__/api.integration.test.ts",
@@ -60,6 +62,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.13.0",
     "@types/pg": "^8.11.11",
+    "@vitest/coverage-v8": "^4.1.11",
     "tsx": "^4.19.0",
     "typescript": "^5.7.3",
     "vitest": "^4.1.1"

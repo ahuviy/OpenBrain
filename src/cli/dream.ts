@@ -27,31 +27,22 @@ import { getDisciplineConfig } from "../capture/discipline.js";
 import { runDream } from "../dream/index.js";
 import { runBackfillSlice } from "../dream/backfill.js";
 import { createDreamPort } from "../dream/port.js";
-import { getBackfillWindowMs, getDreamThresholds, getProposalTtlHours } from "../dream/config.js";
-import { DREAM_OPS, type DreamOp } from "../dream/constants.js";
+import {
+  getBackfillOps,
+  getBackfillWindowMs,
+  getDreamOps,
+  getDreamThresholds,
+  getProposalTtlHours,
+} from "../dream/config.js";
 import { sendNotification } from "../notify.js";
 import { runScheduledDream } from "./scheduled-dream.js";
-
-function requestedOps(raw: string | undefined): DreamOp[] | undefined {
-  if (!raw) return undefined;
-
-  const requested = raw.split(",").map((op) => op.trim()).filter(Boolean);
-  const unknown = requested.filter((op) => !DREAM_OPS.includes(op as DreamOp));
-  if (unknown.length > 0) {
-    throw new Error(`DREAM_OPS contains unknown operations: ${unknown.join(", ")}`);
-  }
-
-  return requested as DreamOp[];
-}
-
-const DEFAULT_BACKFILL_OPS: DreamOp[] = ["vocabulary", "merge"];
 
 async function main(): Promise<void> {
   const pool = getPool();
   const embedder = getEmbedder();
   const discipline = getDisciplineConfig();
-  const ops = requestedOps(process.env.DREAM_OPS);
-  const backfillOps = requestedOps(process.env.DREAM_BACKFILL_OPS) ?? DEFAULT_BACKFILL_OPS;
+  const ops = getDreamOps();
+  const backfillOps = getBackfillOps();
   const backfillWindowMs = getBackfillWindowMs();
   const port = createDreamPort(pool, embedder, getProposalTtlHours());
 

@@ -60,6 +60,11 @@ cli(async () => {
     step("Provenance integration tests");
     await run("npm", ["run", "test:provenance"]);
 
+    // The cron entry point runs as a subprocess against a fake embedder it
+    // starts itself, so this needs no app and belongs before the app is up.
+    step("Scheduled-run acceptance tests");
+    await run("npm", ["run", "test:scheduled"]);
+
     // In-process: these build the Hono/MCP app themselves and need no server.
     step("MCP + OAuth integration tests");
     await run("npm", ["run", "test:mcp"]);

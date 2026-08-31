@@ -22,6 +22,10 @@ import {
   findOpenProposal,
   listDreamRuns,
   listThoughtsTagged,
+  listCandidatesSince,
+  oldestThoughtAt,
+  saveBackfillCursor,
+  lockDreamState,
   type ThoughtMetadata,
 } from "../queries.js";
 
@@ -585,6 +589,10 @@ describe("insertDreamRun", () => {
     expect(sql).toContain("INSERT INTO dream_runs");
     expect(params).toContain("markets");
     expect(params).toContain("ok");
+    // The window it was allowed to look at: without it a stuck watermark and a
+    // quiet corpus are the same row.
+    expect(sql).toContain("watermark_from, watermark_to");
+    expect(params).toContainEqual(new Date("2026-08-19T02:59:00Z"));
     // JSONB columns are stringified once, at the boundary.
     expect(params).toContain(JSON.stringify([{ kind: "merge", sources: ["a", "b"] }]));
   });
@@ -626,6 +634,7 @@ describe("listDreamRuns", () => {
     const [sql, params] = mockQuery.mock.calls[0]!;
     expect(sql).toContain("ORDER BY started_at DESC");
     expect(sql).toContain("LIMIT");
+    expect(sql).toContain("watermark_from");
     expect(params).toEqual(["markets", 20]);
   });
 
@@ -899,5 +908,123 @@ describe("updateThought edit stamp", () => {
     expect(sql).toMatch(/RETURNING[\s\S]*updated_at/);
     expect(result.updated_at).toEqual(updated_at);
     expect(result.updated_at).not.toEqual(result.created_at);
+  });
+});
+
+// ─── Run scoping and the backfill sweep ─────────────────────────────
+
+describe("listCandidatesSince", () => {
+  it("selects live, embedded thoughts in one project, oldest first", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await listCandidatesSince(pool, new Date("2026-08-01T00:00:00Z"), "markets");
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("updated_at > $1");
+    expect(sql).toContain("archived = false");
+    expect(sql).toContain("embedding IS NOT NULL");
+    expect(sql).toContain("ORDER BY updated_at ASC");
+    // The empty-string bucket has to match a NULL project or the no-project
+    // runs would see nothing at all.
+    expect(sql).toContain("COALESCE(project, '') = $2");
+    expect(params).toContain("markets");
+  });
+
+  it("leaves the window open at the top when no slice is named", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await listCandidatesSince(pool, new Date(0), "markets");
+
+    expect(mockQuery.mock.calls[0]![1]).toContain(null);
+  });
+
+  it("compares a backfill slice's top a millisecond wide", async () => {
+    // `updated_at` keeps microseconds a JS Date does not, so a bound taken from
+    // a row's own stamp is strictly below the stored value: `<= until` would
+    // drop the row that defined the boundary from every slice.
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [] });
+    const until = new Date("2026-08-01T00:00:00Z");
+
+    await listCandidatesSince(pool, new Date(0), "markets", 500, until);
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("updated_at < $4 + interval '1 millisecond'");
+    expect(params).toContainEqual(until);
+  });
+});
+
+describe("oldestThoughtAt", () => {
+  it("asks for the oldest live, embedded thought in the project", async () => {
+    const { pool, mockQuery } = createMockPool();
+    const oldest = new Date("2026-05-01T00:00:00Z");
+    mockQuery.mockResolvedValue({ rows: [{ oldest }] });
+
+    expect(await oldestThoughtAt(pool, "markets")).toEqual(oldest);
+
+    const [sql] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("min(updated_at)");
+    // Archived rows are a merge's sources; nothing would consolidate them
+    // again, and letting one hold the floor down would stall the sweep short of
+    // finishing.
+    expect(sql).toContain("archived = false");
+  });
+
+  it("is undefined for a project with no thoughts", async () => {
+    const { pool, mockQuery } = createMockPool();
+    mockQuery.mockResolvedValue({ rows: [{ oldest: null }] });
+
+    expect(await oldestThoughtAt(pool, "empty")).toBeUndefined();
+  });
+});
+
+describe("saveBackfillCursor", () => {
+  it("moves the cursor without touching the forward watermark", async () => {
+    // The two hands move independently: a slice reads rows the forward hand has
+    // already settled, and writing a watermark from them would rewind it.
+    const { pool, mockQuery } = createMockPool();
+    const client = (await pool.connect()) as unknown as pg.PoolClient;
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await saveBackfillCursor(client, "markets", new Date("2026-07-02T00:00:00Z"), false);
+
+    const [sql] = mockQuery.mock.calls[0]!;
+    expect(sql).toContain("backfill_cursor = $2");
+    expect(sql).not.toContain("watermark =");
+  });
+
+  it("stamps the finish only on the slice that reached the oldest thought", async () => {
+    const { pool, mockQuery } = createMockPool();
+    const client = (await pool.connect()) as unknown as pg.PoolClient;
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await saveBackfillCursor(client, "markets", new Date("2026-06-01T00:00:00Z"), true);
+
+    const [sql, params] = mockQuery.mock.calls[0]!;
+    // Conditional in SQL, not in JS: a later slice must not clear a finish an
+    // earlier one recorded.
+    expect(sql).toContain("CASE WHEN $3 THEN now() ELSE backfill_done_at END");
+    expect(params).toContain(true);
+  });
+});
+
+describe("lockDreamState", () => {
+  it("reads the sweep's place alongside the watermark it locks", async () => {
+    const { pool, mockQuery } = createMockPool();
+    const client = (await pool.connect()) as unknown as pg.PoolClient;
+    mockQuery.mockResolvedValue({
+      rows: [{ project: "markets", watermark: new Date(0), last_run_at: new Date(0), backfill_cursor: null, backfill_done_at: null }],
+    });
+
+    await lockDreamState(client, "markets", new Date(0));
+
+    const [insert] = mockQuery.mock.calls[0]!;
+    const [select] = mockQuery.mock.calls[1]!;
+    expect(insert).toContain("backfill_cursor");
+    expect(select).toContain("backfill_done_at");
+    // The lock is what stops two runs consolidating one project at once.
+    expect(select).toContain("FOR UPDATE");
   });
 });

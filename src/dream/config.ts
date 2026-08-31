@@ -8,6 +8,7 @@
  */
 
 import { getDisciplineConfig } from "../capture/discipline.js";
+import { DREAM_OPS, type DreamOp } from "./constants.js";
 import type { DreamThresholds } from "./index.js";
 
 export const DEFAULT_THRESHOLDS: DreamThresholds = {
@@ -81,4 +82,47 @@ export function getProposalTtlHours(env: NodeJS.ProcessEnv = process.env): numbe
 export function getBackfillWindowMs(env: NodeJS.ProcessEnv = process.env): number {
   const days = numberFrom(env.DREAM_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS);
   return days > 0 ? days * DAY_MS : 0;
+}
+
+/**
+ * What the backward sweep is allowed to do, when nothing says otherwise.
+ *
+ * Vocabulary and merges only: those apply immediately and leave no proposal.
+ * One open proposal per project supersedes the last, so a sweep that proposed
+ * would keep replacing the proposal drawn from the newest thoughts with one
+ * about history nobody asked to review — and an unreviewed proposal holds the
+ * forward watermark back while it waits.
+ */
+export const DEFAULT_BACKFILL_OPS: DreamOp[] = ["vocabulary", "merge"];
+
+/**
+ * Parses an operations list, refusing an unknown name.
+ *
+ * Refusing rather than ignoring: a typo in a scheduled job's environment would
+ * otherwise silently narrow what the run does, and the symptom — a schedule
+ * that quietly stops merging — looks exactly like a corpus with nothing to
+ * merge. Undefined for an unset or empty value, meaning "the caller's default".
+ */
+export function parseDreamOps(raw: string | undefined): DreamOp[] | undefined {
+  if (!raw) return undefined;
+
+  const requested = raw.split(",").map((op) => op.trim()).filter(Boolean);
+  if (requested.length === 0) return undefined;
+
+  const unknown = requested.filter((op) => !DREAM_OPS.includes(op as DreamOp));
+  if (unknown.length > 0) {
+    throw new Error(`unknown dream operations: ${unknown.join(", ")}`);
+  }
+
+  return requested as DreamOp[];
+}
+
+/** What a scheduled forward run does. Undefined means all four operations. */
+export function getDreamOps(env: NodeJS.ProcessEnv = process.env): DreamOp[] | undefined {
+  return parseDreamOps(env.DREAM_OPS);
+}
+
+/** What a backfill slice does. Never undefined: the sweep has its own default. */
+export function getBackfillOps(env: NodeJS.ProcessEnv = process.env): DreamOp[] {
+  return parseDreamOps(env.DREAM_BACKFILL_OPS) ?? DEFAULT_BACKFILL_OPS;
 }

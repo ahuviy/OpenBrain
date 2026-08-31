@@ -351,6 +351,17 @@ export default function dreamPortContractTests(driver: DreamPortDriver): void {
         expect(run).toMatchObject({ status: "failed", error: "embedder timeout" });
       });
 
+      it("records a run that settled no window as having none", async () => {
+        // A run that threw never reached a window, and a backfill slice settles
+        // no watermark. Inventing one would claim a pass that never happened.
+        await port.recordRun(record({ status: "failed", error: "embedder timeout", watermark_from: null, watermark_to: null }));
+
+        const [run] = await port.listRuns("markets", 10);
+
+        expect(run!.watermark_from).toBeNull();
+        expect(run!.watermark_to).toBeNull();
+      });
+
       it("returns runs newest first", async () => {
         await port.recordRun(record({ trigger: "older", started_at: new Date("2026-08-17T03:00:00Z") }));
         await port.recordRun(record({ trigger: "newer", started_at: new Date("2026-08-19T03:00:00Z") }));

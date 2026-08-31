@@ -122,9 +122,13 @@ npm run test:all  # every suite, provisioning what it needs
 ```
 
 `test:all` starts a throwaway Postgres, applies the schema, builds, boots a fake embedder and the
-app, runs all five suites, and tears down **only what it started** — a database you were already
+app, runs every suite, and tears down **only what it started** — a database you were already
 running is reused and left alone. Without Docker it runs the unit tests and exits non-zero, saying
 why.
+
+`npm run test:coverage` reports line and branch coverage for the unit run. Code that only exists to
+talk to Postgres reads as uncovered there and is covered by the suites below instead, so read the
+two together rather than chasing the unit number on `src/db/queries.ts` or `src/dream/port.ts`.
 
 ### The suites
 
@@ -133,6 +137,7 @@ why.
 | Unit | `npm test` | nothing |
 | DreamPort contract | `npm run test:db` | Postgres |
 | Provenance helpers | `npm run test:provenance` | Postgres |
+| Scheduled run (acceptance) | `npm run test:scheduled` | Postgres + a build (`npm run build`) |
 | MCP + OAuth | `npm run test:mcp` | nothing (builds the app in-process) |
 | REST API | `npm run test:api` | Postgres + a running server |
 
@@ -140,6 +145,15 @@ Unit tests live beside their code in `src/**/__tests__/`; the rest in `src/__int
 Integration tests are excluded from `npm test` so the unit run stays fast, and they **skip** rather
 than fail when no database is reachable — "you didn't start Docker" is not a defect, and a suite
 that reds for that reason is one people learn to ignore.
+
+The scheduled-run suite is the acceptance level: it drives the whole unattended job against a real
+database — every project, the forward pass, the backfill sweep, the failure path — and then runs the
+actual cron entry point (`dist/cli/dream.js`, the file the workflow invokes) as a subprocess against
+a fake embedder. It skips the subprocess half when there is no build.
+
+Database-backed suites share one Postgres and each TRUNCATEs it, so `connectTestDatabase` takes a
+session advisory lock for the lifetime of a suite. That makes "one suite at a time" a guarantee
+rather than an accident of how the npm scripts happen to invoke them.
 
 Use **fakes, not mocks**. The codebase injects narrow function types (`SimilaritySearch`,
 `JudgePair`, `Synthesise`) rather than mocking modules, so a unit test exercises real code paths.

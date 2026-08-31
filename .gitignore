@@ -39,3 +39,4 @@ tmp-*.sh
 
 # Code review workspace
 .reviews/
+coverage/

@@ -51,6 +51,18 @@ export async function isDatabaseReachable(): Promise<boolean> {
 
 const DREAM_TABLES = ["dream_runs", "dream_proposals", "dream_state", "thoughts"] as const;
 
+/**
+ * One key, every database-backed suite.
+ *
+ * These suites share a single Postgres and each one TRUNCATEs it, so two
+ * running at once destroy each other's fixtures — and the failures land in
+ * whichever suite lost the race, which is not the one to go and read. The npm
+ * scripts happen to invoke them one process at a time; the lock is what makes
+ * that a guarantee rather than a coincidence, so a coverage run, a globbed
+ * invocation or a future parallel runner cannot resurrect the problem.
+ */
+const SUITE_LOCK_KEY = 20260831;
+
 export async function connectTestDatabase(): Promise<TestDatabase> {
   const pool = new pg.Pool(databaseUrlFromEnv());
 
@@ -69,6 +81,12 @@ export async function connectTestDatabase(): Promise<TestDatabase> {
     );
   }
 
+  // Held on its own connection for the lifetime of the suite: a session-level
+  // advisory lock lives with the session, so taking it from the pool would
+  // release it the moment that client went back.
+  const gate = await pool.connect();
+  await gate.query("SELECT pg_advisory_lock($1)", [SUITE_LOCK_KEY]);
+
   return {
     pool,
     async truncate() {
@@ -77,6 +95,8 @@ export async function connectTestDatabase(): Promise<TestDatabase> {
       await pool.query(`TRUNCATE ${DREAM_TABLES.join(", ")} RESTART IDENTITY CASCADE`);
     },
     async close() {
+      await gate.query("SELECT pg_advisory_unlock($1)", [SUITE_LOCK_KEY]).catch(() => undefined);
+      gate.release();
       await pool.end();
     },
   };

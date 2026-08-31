@@ -36,7 +36,13 @@ describe.skipIf(!reachable)("runMigrations", () => {
 
   it("creates the dream tables on a database that never ran migration 006", async () => {
     await db.pool.query(`DROP TABLE IF EXISTS dream_proposals, dream_state`);
-    await db.pool.query(`DELETE FROM knex_migrations WHERE name = '006_dream.cjs'`);
+    // Every later migration that ALTERS those tables has to be forgotten too.
+    // Forgetting 006 alone leaves knex believing 009 has run, so the tables come
+    // back without the columns it added — a database that then breaks every
+    // suite that runs after this one, in a way that looks like their bug.
+    await db.pool.query(
+      `DELETE FROM knex_migrations WHERE name IN ('006_dream.cjs', '009_dream_backfill.cjs')`,
+    );
     expect(await tableExists(db.pool, "dream_state")).toBe(false);
 
     const applied = await runMigrations();
@@ -44,6 +50,13 @@ describe.skipIf(!reachable)("runMigrations", () => {
     expect(applied).toContain("006_dream.cjs");
     expect(await tableExists(db.pool, "dream_state")).toBe(true);
     expect(await tableExists(db.pool, "dream_proposals")).toBe(true);
+    // Restored whole, not just re-created: the sweep's columns are part of the
+    // schema those tables are supposed to have.
+    const { rows } = await db.pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'dream_state' AND column_name = 'backfill_cursor'`,
+    );
+    expect(rows).toHaveLength(1);
   });
 
   it("is a no-op on a database that is already current", async () => {
