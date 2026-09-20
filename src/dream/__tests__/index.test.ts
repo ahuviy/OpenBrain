@@ -635,3 +635,62 @@ describe("runDream", () => {
     expect(recorded.proposals).toBe(0);
   });
 });
+
+describe("runDream and the brain's own output", () => {
+  // Synthesis adds a thought and archives nothing, so its output sits in the
+  // corpus beside the sources it was written from — and is the row most likely
+  // to be pulled back into that same cluster, because a summary is the most
+  // central text about its own subject. Left eligible, it gets summarised
+  // again, and the literals a later search needs fall out a pass at a time.
+  // Derived rows are outputs, never inputs.
+  const derivedMeta = (sources: string[]) => ({
+    dream: { op: "synthesis", run_at: "2026-08-15T00:00:00Z", sources },
+  });
+
+  it("builds no edge from a derived candidate, so nothing generates from it", async () => {
+    const rows = [candidate("s1", { metadata: derivedMeta(["a", "b"]) })];
+    const other = { ...candidate("b"), similarity: 0.85 } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { s1: [other] });
+
+    const result = await runDream(port, judgeContradicts, synthesise, config, thresholds, {}, now);
+
+    expect(recorded.proposals).toBe(0);
+    expect(recorded.merges).toBe(0);
+    expect(result.proposal_id).toBeNull();
+  });
+
+  it("drops a derived neighbour too, not just a derived candidate", async () => {
+    // The filter has to hold on BOTH sides of the edge: a captured row whose
+    // neighbour is a summary would otherwise be judged against it, and a
+    // contradiction verdict could archive the real thought in favour of the
+    // paraphrase.
+    const rows = [candidate("a")];
+    const derived = {
+      ...candidate("s1", { metadata: derivedMeta(["a"]) }),
+      similarity: 0.85,
+    } as ThoughtRow & { similarity: number };
+    const { port, recorded } = fakePort(rows, { a: [derived] });
+
+    const result = await runDream(port, judgeContradicts, synthesise, config, thresholds, {}, now);
+
+    expect(recorded.proposals).toBe(0);
+    expect(recorded.merges).toBe(0);
+    expect(result.proposal_id).toBeNull();
+  });
+
+  it("still lets the vocabulary sweep normalise a derived row", async () => {
+    // Deliberately unaffected: vocabulary runs off the candidate list, not the
+    // edge graph, and only ever rewrites metadata tags. It cannot drift
+    // anything, and a summary carrying a stale tag should still be findable
+    // under the canonical one.
+    const rows = [
+      candidate("s1", { metadata: { ...derivedMeta(["a"]), topics: ["fx"] } }),
+    ];
+    const { port, recorded } = fakePort(rows, {});
+
+    const result = await runDream(port, judgeContradicts, synthesise, config, thresholds, {}, now);
+
+    expect(result.applied.vocabulary).toBe(1);
+    expect(recorded.changes[0]).toMatchObject({ id: "s1", topics: ["forex"] });
+  });
+});

@@ -27,6 +27,32 @@ describe("findDuplicate", () => {
     expect(result?.similarity).toBe(0.94);
   });
 
+  it("ignores a synthesis and reports no duplicate", async () => {
+    // A summary is a paraphrase of older thoughts. Letting one match here
+    // refuses new evidence because the brain already holds a generalisation of
+    // older evidence — the specific lost to the general, which is backwards.
+    const derived = match(0.97, { metadata: { dream: { op: "synthesis", sources: ["a", "b"] } } });
+    const search: SimilaritySearch = vi.fn(async () => [derived]);
+
+    expect(await findDuplicate(search, [0.1], options)).toBeUndefined();
+  });
+
+  it("finds the real duplicate sitting behind a synthesis", async () => {
+    // Skipping past derived rows rather than only rejecting matches[0]: a
+    // summary outranking a genuine duplicate must not hide it.
+    const derived = match(0.98, {
+      id: "99999999-9999-9999-9999-999999999999",
+      metadata: { dream: { op: "synthesis", sources: ["a"] } },
+    });
+    const real = match(0.95, { id: "11111111-2222-3333-4444-555555555555" });
+    const search: SimilaritySearch = vi.fn(async () => [derived, real]);
+
+    const result = await findDuplicate(search, [0.1], options);
+
+    expect(result?.id).toBe("11111111-2222-3333-4444-555555555555");
+    expect(result?.similarity).toBe(0.95);
+  });
+
   it("returns nothing when the closest neighbour is below the threshold", async () => {
     const search: SimilaritySearch = vi.fn(async () => [match(0.72)]);
     expect(await findDuplicate(search, [0.1], options)).toBeUndefined();

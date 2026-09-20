@@ -19,6 +19,7 @@ import { screenMergeClusters } from "./ops/merge-guard.js";
 import { dropConflictingItems } from "./consistency.js";
 import { planContradictionItems, type JudgePair } from "./ops/contradiction.js";
 import { planSynthesisItems, type Synthesise } from "./ops/synthesis.js";
+import { isDerived } from "./origin.js";
 import type { ProposalItem } from "./proposal.js";
 import {
   mergeAudit,
@@ -164,10 +165,20 @@ export async function runDream(
   const byId = new Map<string, ThoughtRow>();
   for (const row of candidates) byId.set(row.id, row);
 
+  // Derived rows are dream's own output, and they are excluded from the edge
+  // graph on BOTH sides. Everything downstream that generates or destroys —
+  // merge, contradiction, synthesis — reads only from `edges`, so one filter
+  // here is what keeps a summary from being summarised again, merged with the
+  // very sources it was written from, or judged to contradict one of them and
+  // archiving it. See src/dream/origin.ts for why. Vocabulary is deliberately
+  // unaffected: it runs off `candidates`, touches only metadata tags, and so
+  // cannot drift anything.
   const edges: SimilarityEdge[] = [];
   for (const row of candidates) {
+    if (isDerived(row)) continue;
     for (const neighbour of await port.neighbours(row, thresholds.neighbour)) {
       if (neighbour.id === row.id) continue;
+      if (isDerived(neighbour)) continue;
       byId.set(neighbour.id, neighbour);
       edges.push({ a: row.id, b: neighbour.id, similarity: neighbour.similarity });
     }

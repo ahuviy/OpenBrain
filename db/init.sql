@@ -55,6 +55,21 @@ CREATE INDEX IF NOT EXISTS idx_thoughts_project
 CREATE INDEX IF NOT EXISTS idx_thoughts_created_by
     ON thoughts(created_by);
 
+-- ─── Provenance of the row itself (see db/knex-migrations/010_thought_origin.cjs)
+-- Synthesis adds a thought and archives nothing, so its output would otherwise be
+-- indistinguishable from a capture — and would be re-summarised, and would refuse
+-- new captures as duplicates of itself. Generated, so it cannot drift from the
+-- metadata it describes and needs no backfill.
+ALTER TABLE thoughts
+    ADD COLUMN IF NOT EXISTS origin TEXT
+    GENERATED ALWAYS AS (
+        CASE WHEN metadata->'dream'->>'op' IS NULL THEN 'captured' ELSE 'derived' END
+    ) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_thoughts_origin_captured
+    ON thoughts (created_at DESC)
+    WHERE origin = 'captured';
+
 -- Partial index for non-archived thoughts
 CREATE INDEX IF NOT EXISTS idx_thoughts_archived
     ON thoughts(archived) WHERE archived = false;

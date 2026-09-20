@@ -9,6 +9,7 @@
  */
 
 import type { SearchResult } from "../db/queries.js";
+import { isCaptured } from "../dream/origin.js";
 
 export interface DuplicateMatch {
   id: string;
@@ -52,7 +53,14 @@ export async function findDuplicate(
   if (!options.enabled || options.force || options.supersedes) return undefined;
 
   const matches = await search(embedding, options.threshold, options.project);
-  const best = Array.isArray(matches) ? matches[0] : undefined;
+
+  // Only a CAPTURED thought can make a capture redundant. A synthesis is a
+  // paraphrase of older thoughts, so letting one match here refuses real new
+  // evidence on the grounds that the brain already holds a summary covering it
+  // — losing the specific over the general, which is backwards. Skipping past
+  // derived rows rather than taking matches[0] also means a genuine duplicate
+  // sitting behind a summary is still found.
+  const best = Array.isArray(matches) ? matches.find(isCaptured) : undefined;
   if (!best || !Number.isFinite(best.similarity)) return undefined;
   if (best.similarity < options.threshold) return undefined;
 
