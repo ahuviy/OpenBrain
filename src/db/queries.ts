@@ -19,6 +19,18 @@ export interface ThoughtMetadata {
     original_id?: string;
     imported_at?: string;
   };
+  /**
+   * Written by a dream run, never by a capture. `op` is what marks the row as
+   * derived (see src/dream/origin.ts); the lineage key differs per op —
+   * synthesis names its `sources`, merge names what it was `merged_from`,
+   * because a single `supersedes` FK cannot express an N-way merge.
+   */
+  dream?: {
+    op: string;
+    run_at?: string;
+    sources?: string[];
+    merged_from?: string[];
+  };
 }
 
 export interface ThoughtRow {
