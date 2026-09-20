@@ -115,7 +115,10 @@ export interface CandidateRow extends ThoughtRow {
 
 ### 4.4 The `metadata.dream` sub-document
 
-Dream never overwrites caller metadata. It writes one reserved key:
+Dream never overwrites caller metadata. It writes one reserved key, declared on `ThoughtMetadata` in
+`src/db/queries.ts` — `metadata.dream.op` is what `origin.ts` and the generated `origin` column both
+key on (§6.5), so the key has to be part of the row type rather than only appearing in the ops, which
+build metadata as `Record<string, unknown>`:
 
 ```ts
 interface DreamProvenance {
