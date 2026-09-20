@@ -155,6 +155,19 @@ here — it has drifted once already.
 - **No new direct deps without justification.** This codebase intentionally has few dependencies. Prefer std lib + `pg` + the MCP SDK.
 - **Tests live next to code** (`src/foo/__tests__/foo.test.ts`), except integration tests which live in `src/__integration__/`.
 
+### The one invariant not to break
+
+`thoughts` holds captured evidence. Anything a dream run generates is marked `derived`
+(`metadata.dream.op` set, surfaced as the generated `origin` column) and must never become input to
+another generative pass. Concretely: `src/dream/index.ts` drops derived rows when building the edge
+graph on both sides, and `findDuplicate` skips them — do not "simplify" either back to taking the
+whole candidate set or `matches[0]`. Merge, contradiction and synthesis all read from `edges`, so
+that one filter is what caps generation depth at 1. `vocabulary` is deliberately exempt: it rewrites
+metadata tags only and cannot drift content.
+
+Without this, synthesis output gets re-summarised on later runs and the specific literals disappear a
+pass at a time. See `docs/plans/2026-08-18-dream-consolidation-design.md` §6.5.
+
 ### When adding a new embedder provider
 
 1. Add `src/embedder/<provider>.ts` implementing the `Embedder` interface.

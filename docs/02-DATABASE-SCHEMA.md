@@ -92,6 +92,7 @@ CREATE TRIGGER set_updated_at
 | `project` | TEXT | Optional project scope (NULL = unscoped) |
 | `created_by` | TEXT | Optional user identifier for multi-developer provenance (NULL = unset) |
 | `archived` | BOOLEAN | Soft-archive flag (default: false) |
+| `origin` | TEXT | Generated: `captured` (a person wrote it) or `derived` (a dream run wrote it). See *Row origin* below. |
 | `supersedes` | UUID | FK to a prior thought this one replaces |
 | `created_at` | TIMESTAMPTZ | When the thought was captured |
 | `updated_at` | TIMESTAMPTZ | Auto-updated on modifications |
@@ -396,6 +397,63 @@ Returns thoughts whose `source_file_hash` matches `source_hash`, ordered by `cre
 ```sql
 select * from match_thoughts_by_source('sha256:abc...', 10, 'openbrain', false);
 ```
+
+---
+
+## Row origin: captured vs derived
+
+Migration `010_thought_origin.cjs` adds one generated column that answers a question nothing else in
+the schema could: **did a person write this thought, or did the brain write it about itself?**
+
+```sql
+origin TEXT GENERATED ALWAYS AS (
+    CASE WHEN metadata->'dream'->>'op' IS NULL THEN 'captured' ELSE 'derived' END
+) STORED
+```
+
+Generated rather than written, for the same reason as the provenance columns above: it cannot drift
+from the metadata it describes, and existing rows classify themselves the moment the column exists —
+no backfill.
+
+| Value | Means | Examples |
+|---|---|---|
+| `captured` | A person wrote it. The evidence layer. | A normal capture; a merge canonical (merge concatenates deterministically, so its output is still the user's words) |
+| `derived` | A dream run wrote it. | A `synthesis` summary |
+
+### Why it exists
+
+Synthesis adds a thought and archives nothing, so its output sits in the corpus beside the sources it
+was written from. Unmarked, it was eligible as *input* to the next run — and because a summary is the
+most central text about its own cluster, it was the row most likely to be pulled straight back in and
+summarised again. Generation depth was unbounded, and the specific literals fall out first at each
+pass because they are the least predictable tokens. The pre-write duplicate check had the mirror
+problem: it compared new captures against summaries, and could refuse real evidence as a duplicate of
+a paraphrase of older evidence.
+
+**The invariant:** derived rows are outputs, never inputs. Dream's generative and destructive
+operations (`merge`, `contradiction`, `synthesis`) read `captured` rows only, which caps generation
+depth at one, permanently. `vocabulary` is deliberately exempt — it only ever rewrites metadata tags,
+so it cannot drift anything, and a summary carrying a stale tag should still be findable under the
+canonical one. Full rationale and the supporting research in
+`docs/plans/2026-08-18-dream-consolidation-design.md` §6.5.
+
+### Index
+
+```sql
+CREATE INDEX idx_thoughts_origin_captured
+    ON thoughts (created_at DESC)
+    WHERE origin = 'captured';
+```
+
+Partial on purpose: every hot path wants the captured side, and derived rows are a small minority the
+planner is better off seq-scanning.
+
+### Auditing drift
+
+`db/diagnostics/generation-depth.sql` walks `metadata.dream.sources` backwards and groups summaries by
+how many generations they sit from captured evidence. Read-only; returns counts and ids, never
+content. A healthy corpus reports a single row at generation 1 — anything at 2 or higher is a summary
+written partly from another summary and predates this rule.
 
 ---
 

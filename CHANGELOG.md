@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Dream no longer consumes its own output. A `synthesis` adds a thought and archives nothing, so its
+  summary sat in the corpus beside the sources it was written from — and, being the most central text
+  about that cluster, was the row most likely to be pulled back in and summarised again. Generation
+  depth was unbounded, and the specific literals (a ticket id, a price, a phone number) fall out first
+  at each pass. The edge graph now excludes derived rows on both sides, which covers `merge`,
+  `contradiction` and `synthesis` in one place since all three read only from `edges`. `vocabulary` is
+  deliberately unaffected — it rewrites metadata tags only and cannot drift anything.
+- Pre-write dedupe compared new captures against summaries and could refuse real evidence as a
+  duplicate of a paraphrase of older evidence. `findDuplicate` now skips past derived rows rather than
+  only inspecting the closest match, so a genuine duplicate ranked behind a summary is still found.
+
 ### Added
 - `dream_review` (REST: `GET /dream/proposals/:id`) reads a proposal back without
   deciding anything — every item with its key, the thoughts behind it, and what
@@ -13,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   called, so a proposal whose items were never seen had no safe move.
 - `dream` now returns the proposed `items` in full, not just counts, keyed exactly
   as `dream_apply` takes them.
+
+### Added (generation discipline)
+- Migration `010_thought_origin.cjs` adds `thoughts.origin`, a generated column reading `captured` or
+  `derived` from `metadata.dream.op`. Generated rather than written, so it cannot drift from the
+  metadata it describes and needs no backfill.
+- `db/diagnostics/generation-depth.sql` reports how far each summary sits from captured evidence.
+  Read-only, counts and ids only. Anything at generation 2 or higher is a summary written partly from
+  another summary.
 
 ### Added (backfill and audit)
 - `dream(since: "1970-01-01")` re-examines an earlier window, or the whole

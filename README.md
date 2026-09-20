@@ -315,6 +315,16 @@ Two tiers. **Vocabulary and merges apply immediately** — both are reversible v
 it. **Contradictions and syntheses are proposed**, never applied: those are a model's judgment, and
 a wrong one silently archives a true thought.
 
+**Dream never reads its own output.** A synthesis is a new thought, marked `derived` (the generated
+`origin` column). Merge, contradiction and synthesis all read `captured` rows only, so a summary is
+never summarised again and generation depth stays at one. Without that, a summary — the most central
+text about its own cluster, sitting right beside it — gets pulled straight back in on the next run,
+and the specific literals a later search needs fall out a pass at a time. `vocabulary` is deliberately
+exempt: it rewrites metadata tags only, so a summary with a stale tag stays findable under the
+canonical one. Rationale and the supporting research: `docs/plans/2026-08-18-dream-consolidation-design.md` §6.5.
+Run `db/diagnostics/generation-depth.sql` to check an existing corpus — a healthy one reports a single
+row at generation 1.
+
 A merge is applied only once the contradiction judge has cleared the cluster. Similarity alone
 cannot tell agreement from negation — "deploys must go through the pipeline" and "deploys are done
 from a laptop" differ by a few tokens and sit above the merge threshold — so the pairs most in need

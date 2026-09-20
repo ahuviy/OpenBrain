@@ -97,6 +97,7 @@ export type ContradictionVerdict = (typeof CONTRADICTION_VERDICTS)[number];
 | `created_by` | yes | never | preserved from the canonical source row |
 | `archived` | yes | `merge`, `contradiction` | set `true` on superseded sources |
 | `supersedes` | yes | `merge`, `contradiction`, `synthesis` | single FK — see §6.2 |
+| `origin` | yes | generated | `captured` / `derived`, computed from `metadata.dream.op` (§6.5) |
 | `created_at` | yes | never | |
 | `updated_at` | yes | trigger | `set_updated_at` fires automatically; dream never sets it. **Not exposed on `ThoughtRow`** — see below |
 
@@ -137,6 +138,7 @@ dream(project?, ops?, dry_run?)
   1 load watermark          dream_state[projectKey]  (missing -> epoch, i.e. first run = full corpus)
   2 candidates              thoughts WHERE updated_at > watermark AND archived = false
   3 neighbour expansion     per candidate: searchThoughts(..., NEIGHBOUR_THRESHOLD)
+                            derived rows excluded on BOTH sides of every edge (§6.5)
   4 cluster                 connected components over the pair graph
   5 auto ops                vocabulary, merge          -> applied in a transaction
   6 propose ops             contradiction, synthesis   -> dream_proposals row
@@ -221,6 +223,56 @@ Input: clusters of `>= MIN_SYNTHESIS_CLUSTER` (default 3) thoughts that produced
 its source ids. Applying inserts a **new** thought (`type: "observation"`, `metadata.dream.sources` =
 cluster ids, `supersedes = NULL`) and leaves every source row untouched and unarchived — synthesis
 adds a layer, it does not replace what it summarises.
+
+**Clusters contain captured thoughts only.** A summary is never an input to another summary; see
+§6.5 for why this is the one rule in this document that must not be relaxed.
+
+### 6.5 Generation discipline — derived rows are outputs, never inputs
+
+Synthesis (§6.4) adds a row and archives nothing, so its output lands in the corpus beside the very
+thoughts it was written from. Until migration `010_thought_origin.cjs` nothing distinguished it from
+something the user captured, and two things followed, both silent.
+
+**The summary re-entered as input.** The next run selected it like any other row. A summary is by
+construction the most central text about its own cluster, and it sits right next to that cluster, so
+it is the *single* row most likely to be pulled back in — and summarised again. Generation depth was
+unbounded. The specific literals go first at each pass (a ticket id, a price, a phone number), because
+they are the least predictable tokens in the text, and what survives drifts toward a generic statement
+of what a thought on that subject usually sounds like.
+
+**Dedupe compared captures against summaries.** The pre-write duplicate check searched the whole
+corpus, so a genuinely new capture sitting near an existing summary was refused as a duplicate of it —
+trading real evidence for a paraphrase of older evidence, which is the wrong way round.
+
+This is the failure documented in *Useful Memories Become Faulty When Continuously Updated by LLMs*
+(<https://dylanzsz.github.io/faulty-memory/>): when a model repeatedly rewrites its own memories,
+accuracy falls *below* having no memory at all — 100% to 54% on ARC-AGI with ground truth available.
+Their best-performing configuration was raw records kept with selective deletion and abstraction
+disabled. The schemes that lost were the ones whose output fed their own next input.
+
+**The rule: generation depth is capped at one, permanently.**
+
+| Operation | Writes new text? | Reads derived rows? | Why |
+|---|---|---|---|
+| `vocabulary` | no — metadata tags only | **yes, deliberately** | Cannot drift anything. A summary carrying a stale tag should still be findable under the canonical one. |
+| `merge` | no — deterministic concatenation (§6.2) | no | Merging a summary with its own sources would archive real evidence in favour of a paraphrase. |
+| `contradiction` | no — a verdict over two existing rows | no | A summary judged against its own source could archive the source. |
+| `synthesis` | **yes** | no | The loop above. |
+
+Enforced in two places that read the same key and so cannot disagree:
+
+- **Code** — `src/dream/origin.ts` exports `isDerived` / `isCaptured`, keyed on the *presence* of
+  `metadata.dream.op` rather than its value, so a future op that writes rows is excluded without
+  anyone remembering to update it. `src/dream/index.ts` drops derived rows when building the edge
+  graph, on both sides. Merge, contradiction and synthesis all read only from `edges`, so one filter
+  covers all three. Vocabulary runs off the candidate list instead and is untouched.
+- **Schema** — `thoughts.origin`, a generated column (`captured` / `derived`). Generated rather than
+  written, so it cannot drift from the metadata it describes and needs no backfill. Used by dedupe
+  and available for querying.
+
+`db/diagnostics/generation-depth.sql` walks `metadata.dream.sources` backwards and buckets every
+summary by how far it sits from captured evidence. Anything at generation 2 or higher predates this
+rule and is worth reading by hand. A healthy corpus reports one row: generation 1.
 
 ## 7. Embedder interface change
 
